@@ -1,0 +1,54 @@
+# Foundry
+out/
+cache/
+foundry.lock
+
+# Environment variables
+.env
+.env.local
+.env.production
+
+# Logs
+*.log
+logs/
+
+# Node modules (if using npm for some dependencies)
+node_modules/
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Temporary files
+*.tmp
+*.temp
+
+# Coverage reports
+coverage/
+lcov-report/
+
+# Gas reports
+gas-reports/
+
+# Build artifacts
+dist/
+build/
+
+# Foundry specific
+broadcast/
+deployments/
+
+# Test artifacts
+test-results/

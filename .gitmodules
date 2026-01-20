@@ -1,0 +1,3 @@
+[submodule "evm-contracts/rwa-lending/lib/openzeppelin-contracts"]
+	path = evm-contracts/rwa-lending/lib/openzeppelin-contracts
+	url = https://github.com/OpenZeppelin/openzeppelin-contracts
