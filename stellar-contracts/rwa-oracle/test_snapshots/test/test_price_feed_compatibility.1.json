@@ -106,7 +106,7 @@
   "ledger": {
     "protocol_version": 23,
     "sequence_number": 0,
-    "timestamp": 0,
+    "timestamp": 1000001000,
     "network_id": "0000000000000000000000000000000000000000000000000000000000000000",
     "base_reserve": 0,
     "min_persistent_entry_ttl": 4096,
@@ -403,7 +403,7 @@
             },
             "ext": "v0"
           },
-          4095
+          518400
         ]
       ],
       [
@@ -523,6 +523,14 @@
                             },
                             {
                               "key": {
+                                "symbol": "max_staleness"
+                              },
+                              "val": {
+                                "u64": "86400"
+                              }
+                            },
+                            {
+                              "key": {
                                 "symbol": "resolution"
                               },
                               "val": {
@@ -547,7 +555,7 @@
             },
             "ext": "v0"
           },
-          4095
+          518400
         ]
       ],
       [
@@ -568,7 +576,7 @@
             },
             "ext": "v0"
           },
-          4095
+          518400
         ]
       ]
     ]

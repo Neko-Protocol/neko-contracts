@@ -16,10 +16,15 @@ pub enum Error {
     /// Invalid metadata
     InvalidMetadata = 4,
 
+    /// Invalid price (zero or negative)
+    InvalidPrice = 5,
+
     /// Unauthorized access
     Unauthorized = 6,
 
-    /// Invalid compliance data
-    InvalidComplianceData = 7,
-}
+    /// Timestamp is too far in the future
+    TimestampInFuture = 7,
 
+    /// Timestamp is too old or not strictly increasing
+    TimestampTooOld = 8,
+}
