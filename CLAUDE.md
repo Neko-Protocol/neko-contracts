@@ -31,7 +31,7 @@ forge script script/Deploy.s.sol --rpc-url $ETH_RPC_URL --broadcast
 # Build
 cargo build --workspace --release
 cargo build --package rwa-oracle --release    # Single package
-cargo build --target wasm32v1-none-unknown --release  # WASM
+cargo build --target wasm32v1-none --release  # WASM
 
 # Test
 cargo test --workspace
@@ -70,6 +70,6 @@ cd evm-contracts/rwa-lending && bash setup.sh
 ## Key Conventions
 
 - EVM uses Solidity 0.8.27 with optimizer (200 runs), Cancun EVM version
-- Stellar uses Soroban SDK 23.0.2, Rust Edition 2024
+- Stellar uses Soroban SDK 23.0.4, Rust Edition 2024
 - Tests mirror source structure in `test/` directories
 - OpenZeppelin contracts for ERC20, AccessControl, ReentrancyGuard
