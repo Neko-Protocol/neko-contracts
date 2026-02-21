@@ -3,8 +3,7 @@ resolver = "2"
 members = [
   "rwa-lending",
   "rwa-oracle",
-  "rwa-token",
-  "rwa-perps"
+  "rwa-token"
 ]
 
 [workspace.package]
