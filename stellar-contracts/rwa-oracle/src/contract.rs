@@ -1,5 +1,5 @@
 use soroban_sdk::{
-    contract, contractimpl, panic_with_error, Address, BytesN, Env, Map, Symbol, Vec,
+    Address, BytesN, Env, Map, Symbol, Vec, contract, contractimpl, panic_with_error,
 };
 
 use crate::admin::Admin;
@@ -219,9 +219,11 @@ impl RWAOracle {
     }
 
     fn extend_persistent_ttl(env: &Env, key: &DataKey) {
-        env.storage()
-            .persistent()
-            .extend_ttl(key, PERSISTENT_LIFETIME_THRESHOLD, PERSISTENT_BUMP_AMOUNT);
+        env.storage().persistent().extend_ttl(
+            key,
+            PERSISTENT_LIFETIME_THRESHOLD,
+            PERSISTENT_BUMP_AMOUNT,
+        );
     }
 }
 

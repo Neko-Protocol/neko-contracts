@@ -4,7 +4,7 @@ extern crate std;
 use crate::{Asset, Error, RWAOracle, RWAOracleClient};
 use crate::{RWAAssetType, RWAMetadata, TokenizationInfo, ValuationMethod};
 
-use soroban_sdk::{testutils::Address as _, testutils::Ledger, Address, Env, String, Symbol, Vec};
+use soroban_sdk::{Address, Env, String, Symbol, Vec, testutils::Address as _, testutils::Ledger};
 
 fn create_rwa_oracle_contract<'a>(e: &Env) -> RWAOracleClient<'a> {
     set_ledger_timestamp(e, 2_000_000_000);
@@ -43,7 +43,10 @@ fn create_test_metadata(env: &Env, asset_id: Symbol) -> RWAMetadata {
                 String::from_str(env, "US912810SU08"),
             )],
         ),
-        legal_docs_uri: Some(String::from_str(env, "https://issuer.example/docs/terms.pdf")),
+        legal_docs_uri: Some(String::from_str(
+            env,
+            "https://issuer.example/docs/terms.pdf",
+        )),
         valuation_method: ValuationMethod::Market,
         metadata: Vec::new(env),
         created_at: env.ledger().timestamp(),
@@ -182,7 +185,10 @@ fn test_update_tokenization_info() {
     };
     oracle.update_tokenization_info(&asset_id, &new_info);
 
-    let retrieved = oracle.try_get_tokenization_info(&asset_id).unwrap().unwrap();
+    let retrieved = oracle
+        .try_get_tokenization_info(&asset_id)
+        .unwrap()
+        .unwrap();
     assert_eq!(retrieved.total_supply, Some(2_000_000));
 }
 
@@ -606,7 +612,10 @@ fn test_ttl_extended_on_metadata_update() {
     };
     oracle.update_tokenization_info(&asset_id, &new_info);
 
-    let retrieved = oracle.try_get_tokenization_info(&asset_id).unwrap().unwrap();
+    let retrieved = oracle
+        .try_get_tokenization_info(&asset_id)
+        .unwrap()
+        .unwrap();
     assert_eq!(retrieved.total_supply, Some(2_000_000));
 }
 

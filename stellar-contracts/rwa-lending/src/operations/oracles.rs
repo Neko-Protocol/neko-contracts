@@ -19,32 +19,32 @@ impl Oracles {
         // Get the pegged asset symbol from the RWA Oracle
         // The oracle maintains a mapping from token contract address to asset symbol
         let pegged_asset = oracle_client.get_asset_id_from_token(rwa_token);
-        
+
         // Convert symbol to Asset::Other (the oracle stores RWA assets as Other(symbol))
         let asset = Asset::Other(pegged_asset);
-        
+
         // Get last price from oracle (SEP-40 compatible)
         let oracle_price_data = oracle_client
             .lastprice(&asset)
             .ok_or(Error::OraclePriceFetchFailed)?;
-        
+
         // Validate price data
         if oracle_price_data.price <= 0 {
             return Err(Error::InvalidOraclePrice);
         }
-        
+
         // Check if price is too old (more than 24 hours)
         let current_time = env.ledger().timestamp();
         if oracle_price_data.timestamp + 24 * 60 * 60 < current_time {
             return Err(Error::InvalidOraclePrice);
         }
-        
+
         // Convert rwa_oracle::PriceData to types::PriceData
         let price_data = PriceData {
             price: oracle_price_data.price,
             timestamp: oracle_price_data.timestamp,
         };
-        
+
         Ok(price_data)
     }
 
@@ -52,38 +52,38 @@ impl Oracles {
     /// The Reflector Oracle implements SEP-40, so we use Asset::Other(symbol) to query prices
     pub fn get_crypto_price(env: &Env, asset: &Symbol) -> Result<PriceData, Error> {
         let storage = Storage::get(env);
-        
+
         // Reflector Oracle implements SEP-40 interface (same as RWA Oracle)
         // We reuse rwa_oracle::Client here because both oracles share the same SEP-40 interface.
         // The client is generic - it works with any contract implementing SEP-40 methods.
         // The Reflector Oracle contract address is stored in storage.reflector_oracle
         let oracle_client = rwa_oracle::Client::new(env, &storage.reflector_oracle);
-        
+
         // Convert Symbol to Asset::Other (for crypto assets like XLM, USDC, etc.)
         let asset_enum = Asset::Other(asset.clone());
-        
+
         // Get last price from Reflector Oracle (SEP-40 compatible)
         let oracle_price_data = oracle_client
             .lastprice(&asset_enum)
             .ok_or(Error::OraclePriceFetchFailed)?;
-        
+
         // Validate price data
         if oracle_price_data.price <= 0 {
             return Err(Error::InvalidOraclePrice);
         }
-        
+
         // Check if price is too old (more than 24 hours)
         let current_time = env.ledger().timestamp();
         if oracle_price_data.timestamp + 24 * 60 * 60 < current_time {
             return Err(Error::InvalidOraclePrice);
         }
-        
+
         // Convert rwa_oracle::PriceData to types::PriceData
         let price_data = PriceData {
             price: oracle_price_data.price,
             timestamp: oracle_price_data.timestamp,
         };
-        
+
         Ok(price_data)
     }
 
@@ -93,43 +93,37 @@ impl Oracles {
         rwa_token: &Address,
     ) -> Result<(i128, u32), Error> {
         let price_data = Self::get_rwa_price(env, rwa_token)?;
-        
+
         let storage = Storage::get(env);
         let oracle_client = rwa_oracle::Client::new(env, &storage.rwa_oracle);
-        
+
         // Get decimals from oracle (SEP-40 compatible)
         let decimals = oracle_client.decimals();
-        
+
         Ok((price_data.price, decimals))
     }
 
     /// Get price with decimals from Reflector Oracle
-    pub fn get_crypto_price_with_decimals(
-        env: &Env,
-        asset: &Symbol,
-    ) -> Result<(i128, u32), Error> {
+    pub fn get_crypto_price_with_decimals(env: &Env, asset: &Symbol) -> Result<(i128, u32), Error> {
         let price_data = Self::get_crypto_price(env, asset)?;
-        
+
         let storage = Storage::get(env);
         let oracle_client = rwa_oracle::Client::new(env, &storage.reflector_oracle);
-        
+
         // Get decimals from Reflector Oracle (SEP-40 compatible)
         let decimals = oracle_client.decimals();
-        
+
         Ok((price_data.price, decimals))
     }
 
     /// Get price for a lending asset, routing to the correct oracle based on AssetType.
     /// Crypto assets use the Reflector oracle; Rwa assets use the RWA oracle.
-    pub fn get_price_for_lending_asset(
-        env: &Env,
-        asset: &Symbol,
-    ) -> Result<(i128, u32), Error> {
+    pub fn get_price_for_lending_asset(env: &Env, asset: &Symbol) -> Result<(i128, u32), Error> {
         match Storage::get_asset_type(env, asset) {
             AssetType::Crypto => Self::get_crypto_price_with_decimals(env, asset),
             AssetType::Rwa => {
-                let token_addr = Storage::get_token_contract(env, asset)
-                    .ok_or(Error::TokenContractNotSet)?;
+                let token_addr =
+                    Storage::get_token_contract(env, asset).ok_or(Error::TokenContractNotSet)?;
                 Self::get_rwa_price_with_decimals(env, &token_addr)
             }
         }
@@ -137,15 +131,12 @@ impl Oracles {
 
     /// Get price for a collateral token, routing to the correct oracle based on AssetType.
     /// Rwa collateral uses the RWA oracle; Crypto collateral uses the Reflector oracle.
-    pub fn get_price_for_collateral(
-        env: &Env,
-        token: &Address,
-    ) -> Result<(i128, u32), Error> {
+    pub fn get_price_for_collateral(env: &Env, token: &Address) -> Result<(i128, u32), Error> {
         match Storage::get_collateral_asset_type(env, token) {
             AssetType::Rwa => Self::get_rwa_price_with_decimals(env, token),
             AssetType::Crypto => {
-                let symbol = Storage::get_collateral_symbol(env, token)
-                    .ok_or(Error::TokenContractNotSet)?;
+                let symbol =
+                    Storage::get_collateral_symbol(env, token).ok_or(Error::TokenContractNotSet)?;
                 Self::get_crypto_price_with_decimals(env, &symbol)
             }
         }
@@ -162,11 +153,8 @@ impl Oracles {
         price_decimals: u32,
     ) -> Result<i128, Error> {
         // Multiply amount by price, then divide by 10^(price_decimals) to get USD value
-        let value = amount
-            .checked_mul(price)
-            .ok_or(Error::ArithmeticError)?;
-        
+        let value = amount.checked_mul(price).ok_or(Error::ArithmeticError)?;
+
         Ok(value / 10i128.pow(price_decimals))
     }
 }
-
