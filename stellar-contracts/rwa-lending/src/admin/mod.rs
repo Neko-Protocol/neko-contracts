@@ -1,8 +1,8 @@
-use soroban_sdk::{panic_with_error, Address, Env, Map, Symbol, Vec};
+use soroban_sdk::{Address, Env, Map, Symbol, Vec, panic_with_error};
 
 use crate::common::error::Error;
 use crate::common::storage::Storage;
-use crate::common::types::{InterestRateParams, PoolState, SCALAR_7};
+use crate::common::types::{AssetType, InterestRateParams, PoolState, SCALAR_7};
 
 /// Administrative functions for the lending pool
 pub struct Admin;
@@ -58,6 +58,11 @@ impl Admin {
             admin: admin.clone(),
             collateral_factors: Map::new(env),
             token_contracts: Map::new(env),
+
+            // Asset type routing
+            asset_types: Map::new(env),
+            collateral_asset_types: Map::new(env),
+            collateral_symbols: Map::new(env),
         };
 
         Storage::set(env, &storage);
@@ -74,9 +79,17 @@ impl Admin {
         admin.require_auth();
     }
 
-    /// Set collateral factor for an RWA token (7 decimals)
+    /// Set collateral factor for a token (7 decimals)
+    /// asset_type: Rwa uses RWA oracle, Crypto uses Reflector oracle
+    /// symbol: required for Crypto collateral (e.g. symbol_short!("USDC"))
     /// Example: 7_500_000 = 75%
-    pub fn set_collateral_factor(env: &Env, rwa_token: &Address, factor: u32) {
+    pub fn set_collateral_factor(
+        env: &Env,
+        token: &Address,
+        factor: u32,
+        asset_type: AssetType,
+        symbol: Symbol,
+    ) {
         Self::require_admin(env);
 
         // Validate factor is within [0, SCALAR_7] (0% to 100%)
@@ -85,25 +98,24 @@ impl Admin {
         }
 
         let mut storage = Storage::get(env);
-        storage.collateral_factors.set(rwa_token.clone(), factor);
+        storage.collateral_factors.set(token.clone(), factor);
         Storage::set(env, &storage);
+
+        Storage::set_collateral_asset_type(env, token, asset_type);
+        Storage::set_collateral_symbol(env, token, symbol);
     }
 
-    /// Get collateral factor for an RWA token (7 decimals)
-    pub fn get_collateral_factor(env: &Env, rwa_token: &Address) -> u32 {
+    /// Get collateral factor for a token (7 decimals)
+    pub fn get_collateral_factor(env: &Env, token: &Address) -> u32 {
         let storage = Storage::get(env);
         storage
             .collateral_factors
-            .get(rwa_token.clone())
+            .get(token.clone())
             .unwrap_or(7_500_000) // Default: 75% (7 decimals)
     }
 
     /// Set interest rate parameters for an asset
-    pub fn set_interest_rate_params(
-        env: &Env,
-        asset: &Symbol,
-        params: &InterestRateParams,
-    ) {
+    pub fn set_interest_rate_params(env: &Env, asset: &Symbol, params: &InterestRateParams) {
         Self::require_admin(env);
 
         // Validate parameters (7 decimals)
@@ -118,7 +130,9 @@ impl Admin {
         }
 
         let mut storage = Storage::get(env);
-        storage.interest_rate_params.set(asset.clone(), params.clone());
+        storage
+            .interest_rate_params
+            .set(asset.clone(), params.clone());
         Storage::set(env, &storage);
     }
 
@@ -161,9 +175,16 @@ impl Admin {
     }
 
     /// Set token contract address for an asset symbol
-    pub fn set_token_contract(env: &Env, asset: &Symbol, token_address: &Address) {
+    /// asset_type: Rwa uses RWA oracle, Crypto uses Reflector oracle
+    pub fn set_token_contract(
+        env: &Env,
+        asset: &Symbol,
+        token_address: &Address,
+        asset_type: AssetType,
+    ) {
         Self::require_admin(env);
         Storage::set_token_contract(env, asset, token_address);
+        Storage::set_asset_type(env, asset, asset_type);
     }
 
     /// Set backstop token contract address
@@ -178,6 +199,7 @@ impl Admin {
     /// Only the admin can call this function
     pub fn upgrade(env: &Env, new_wasm_hash: &soroban_sdk::BytesN<32>) {
         Self::require_admin(env);
-        env.deployer().update_current_contract_wasm(new_wasm_hash.clone());
+        env.deployer()
+            .update_current_contract_wasm(new_wasm_hash.clone());
     }
 }

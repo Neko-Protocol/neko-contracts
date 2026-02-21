@@ -4,7 +4,7 @@
   <strong>Part of the <a href="https://github.com/Neko-Protocol">Neko Protocol</a> DeFi ecosystem on Stellar</strong>
 </p>
 
-A lending and borrowing protocol for Real-World Assets (RWAs) on Stellar Soroban. This contract enables users to lend crypto assets and earn yield, or borrow against RWA token collateral, powering the lending and borrowing features of Neko Protocol.
+A lending and borrowing protocol for Real-World Assets (RWAs) on Stellar Soroban. This contract enables users to lend both crypto assets **and RWA tokens** to earn yield, or borrow against RWA/crypto collateral, powering the lending, borrowing, and yield aggregation features of Neko Protocol.
 
 ## Neko Protocol Integration
 
@@ -42,8 +42,8 @@ This lending contract is a core component of the Neko Protocol ecosystem:
 ```
 
 - **Dashboard**: Users view their lending positions, collateral, and borrowing capacity
-- **Lending**: Deposit USDC/XLM and earn yield via bTokens
-- **Borrowing**: Use RWA tokens (NVDA, TSLA, AAPL) as collateral to borrow crypto
+- **Lending**: Deposit USDC/XLM **or RWA tokens** (CETES, USDY etc.) and earn yield via bTokens
+- **Borrowing**: Use RWA tokens or crypto as collateral to borrow any registered asset
 - **Liquidations**: Dutch auctions ensure protocol solvency
 - **Bad Debt Auctions**: Backstop covers uncollateralized debt
 - **Interest Auctions**: Distribute protocol interest to backstop holders
@@ -53,20 +53,22 @@ This lending contract is a core component of the Neko Protocol ecosystem:
 | Component                              | Description                                       | Implementation                                            |
 | -------------------------------------- | ------------------------------------------------- | --------------------------------------------------------- |
 | **Lending and Borrowing Architecture** | Based on Stellar's lending and borrowing protocol | bTokens/dTokens, interest accrual, unified Dutch auctions |
-| **SEP-40 Integration**                 | Oracle price feeds                                | RWA Oracle for collateral, Reflector for debt assets      |
-| **SEP-41 Tokens**                      | Token interface                                   | Interacts with RWA tokens as collateral                   |
+| **SEP-40 Integration**                 | Oracle price feeds with asset type routing        | RWA Oracle for RWA assets, Reflector for crypto assets    |
+| **SEP-41 Tokens**                      | Token interface                                   | RWA tokens as collateral **and** as lending assets        |
+| **AssetType Routing**                  | Generic oracle dispatch per asset                 | `Crypto` → Reflector, `Rwa` → RWA Oracle                  |
 
 ## Features
 
 - **bTokens**: Represent lender deposits + accrued interest (yield-bearing)
 - **dTokens**: Track borrower debt + accrued interest
-- **Multiple RWA Collaterals**: Support multiple RWA tokens (NVDA, TSLA, AAPL) as collateral
-- **Single Debt Asset**: One crypto asset borrowed at a time per borrower
+- **RWA Lending Pools**: RWA tokens (CETES, USDY) can be deposited as lending assets, not only as collateral
+- **Multi-Asset Collateral**: RWA tokens and crypto (USDC) can be used as collateral
+- **AssetType Routing**: Oracle routing automatically — `Crypto` uses Reflector, `Rwa` uses RWA Oracle
+- **Single Debt Asset**: A single asset borrowed at a time by the borrower
 - **Dynamic Interest Rates**: 3-segment piecewise linear model with rate modifier (Blend V2 aligned)
 - **Unified Dutch Auctions**: Single auction system for liquidations, bad debt, and interest distribution
 - **Backstop Module**: First-loss capital to cover bad debt and protect lenders
 - **Health Factor Guards**: MIN (1.1) and MAX (1.15) health factor constraints
-- **TTL Management**: Automatic storage TTL extension for instance and persistent data
 
 ## Project Structure
 
@@ -143,6 +145,22 @@ pub struct ReserveData {
 }
 ```
 
+### AssetType — Oracle Routing
+
+Every registered asset carries an `AssetType` that determines which oracle is
+used for price queries:
+
+```rust
+pub enum AssetType {
+    Crypto,  // Uses the Reflector Oracle (USDC, XLM, etc.)
+    Rwa,     // Uses the RWA Oracle (CETES, USDY, NVDA, etc.)
+}
+```
+
+This enables any asset to participate as either a **lending asset** or
+**collateral**, regardless of whether it is a traditional crypto token or an
+RWA token.
+
 ### Collateralized Debt Position (CDP)
 
 ```rust
@@ -183,17 +201,22 @@ pub fn initialize(
 ### Admin Functions
 
 ```rust
-// Set collateral factor for an RWA token (7 decimals, e.g., 7_500_000 = 75%)
-lending.set_collateral_factor(&rwa_token, &7_500_000);
+// Register an RWA token as a lending asset (pool CETES)
+lending.set_token_contract(&symbol_short!("CETES"), &cetes_addr, &AssetType::Rwa);
+lending.set_interest_rate_params(&symbol_short!("CETES"), &params);
 
-// Set interest rate parameters for an asset
-lending.set_interest_rate_params(&asset, &params);
+// Register crypto as a lending asset (pool USDC)
+lending.set_token_contract(&symbol_short!("USDC"), &usdc_addr, &AssetType::Crypto);
+lending.set_interest_rate_params(&symbol_short!("USDC"), &params);
+
+// Collateral RWA (NVDA as collateral — uses RWA oracle)
+lending.set_collateral_factor(&nvda_token, &7_500_000, &AssetType::Rwa, &symbol_short!("NVDA"));
+
+// Collateral Crypto (USDC as collateral — uses Reflector oracle)
+lending.set_collateral_factor(&usdc_addr, &8_500_000, &AssetType::Crypto, &symbol_short!("USDC"));
 
 // Set pool state (Active, OnIce, Frozen)
 lending.set_pool_state(&PoolState::Active);
-
-// Set token contract address for an asset
-lending.set_token_contract(&asset, &token_address);
 
 // Set backstop token contract
 lending.set_backstop_token(&token_address);
@@ -433,53 +456,56 @@ Storage TTL is automatically extended:
 
 ## Usage Example
 
+### Pool USDC clásico (crypto lending)
+
 ```rust
-// Initialize lending pool
-let contract_id = env.register(LendingContract, ());
-let lending = LendingContractClient::new(&env, &contract_id);
+lending.initialize(&admin, &rwa_oracle, &reflector_oracle, &1000_0000000, &500_000);
 
-lending.initialize(
-    &admin,
-    &rwa_oracle,
-    &reflector_oracle,
-    &1000_0000000,  // backstop threshold
-    &500_000,       // 5% backstop take rate (7 decimals)
-);
-
-// Configure RWA token as collateral (75% factor)
-lending.set_collateral_factor(&nvda_token, &7_500_000);
-
-// Configure USDC interest rates (all values in 7 decimals)
-lending.set_interest_rate_params(&Symbol::new(&env, "USDC"), &InterestRateParams {
-    target_util: 7_500_000,   // 75%
-    max_util: 9_500_000,      // 95%
-    r_base: 100_000,          // 1%
-    r_one: 500_000,           // 5%
-    r_two: 5_000_000,         // 50%
-    r_three: 15_000_000,      // 150%
+// USDC as a lending asset (Reflector oracle)
+lending.set_token_contract(&symbol_short!("USDC"), &usdc_token, &AssetType::Crypto);
+lending.set_interest_rate_params(&symbol_short!("USDC"), &InterestRateParams {
+    target_util: 7_500_000,  max_util: 9_500_000,
+    r_base: 100_000,         r_one: 500_000,
+    r_two: 5_000_000,        r_three: 15_000_000,
     reactivity: 200,
 });
 
-// Set token contract
-lending.set_token_contract(&Symbol::new(&env, "USDC"), &usdc_token);
-
-// Activate pool
+// NVDA as collateral RWA (75% factor, RWA oracle)
+lending.set_collateral_factor(&nvda_token, &7_500_000, &AssetType::Rwa, &symbol_short!("NVDA"));
 lending.set_pool_state(&PoolState::Active);
 
-// Lender deposits USDC
-lending.deposit(&lender, &Symbol::new(&env, "USDC"), &10000_0000000)?;
+// Lender deposits USDC → receives bUSDC
+lending.deposit(&lender, &symbol_short!("USDC"), &10000_0000000)?;
 
-// Borrower adds NVDA collateral
+// Borrower puts NVDA as collateral → borrows USDC
 lending.add_collateral(&borrower, &nvda_token, &100_0000000)?;
+lending.borrow(&borrower, &symbol_short!("USDC"), &5000_0000000)?;
+lending.repay(&borrower, &symbol_short!("USDC"), &d_tokens)?;
+lending.withdraw(&lender, &symbol_short!("USDC"), &b_tokens)?;
+```
 
-// Borrower takes loan
-lending.borrow(&borrower, &Symbol::new(&env, "USDC"), &5000_0000000)?;
+### Pool CETES (RWA lending — para yield aggregator)
 
-// Later: borrower repays
-lending.repay(&borrower, &Symbol::new(&env, "USDC"), &d_tokens)?;
+```rust
+// CETES as a lending asset (RWA oracle)
+lending.set_token_contract(&symbol_short!("CETES"), &cetes_token, &AssetType::Rwa);
+lending.set_interest_rate_params(&symbol_short!("CETES"), &InterestRateParams {
+    target_util: 6_000_000,  // 60% — RWA pools typically have lower utilization
+    max_util: 8_000_000,     // 80%
+    r_base: 200_000,         // 2% base (RWA tiene premium de riesgo)
+    r_one: 800_000,          r_two: 6_000_000,
+    r_three: 20_000_000,     reactivity: 200,
+});
 
-// Lender withdraws with interest
-lending.withdraw(&lender, &Symbol::new(&env, "USDC"), &b_tokens)?;
+// USDC as collateral to borrow CETES (Reflector oracle)
+lending.set_collateral_factor(&usdc_token, &8_500_000, &AssetType::Crypto, &symbol_short!("USDC"));
+
+// Lender (or yield aggregator vault) deposits CETES → receives bCETES
+lending.deposit(&vault_adapter, &symbol_short!("CETES"), &50000_0000000)?;
+
+// Borrower pone USDC → pide CETES prestado (e.g. para short o repo)
+lending.add_collateral(&borrower, &usdc_token, &10000_0000000)?;
+lending.borrow(&borrower, &symbol_short!("CETES"), &5000_0000000)?;
 ```
 
 ## Constants
@@ -499,10 +525,16 @@ lending.withdraw(&lender, &Symbol::new(&env, "USDC"), &b_tokens)?;
 
 ## Oracle Integration
 
-The lending contract uses two oracles:
+The contract uses two oracles and routes automatically based on the `AssetType`:
 
-- **RWA Oracle** (`rwa-oracle`): Prices for RWA collateral tokens (NVDA, TSLA, AAPL)
-- **Reflector Oracle**: Prices for debt assets (USDC, XLM)
+| Oracle | Assets | When to use |
+|--------|--------|---------------|
+| **RWA Oracle** (`rwa-oracle`) | CETES, USDY, NVDA, TSLA, AAPL | `AssetType::Rwa` |
+| **Reflector Oracle** | USDC, XLM, crypto | `AssetType::Crypto` |
+
+Las funciones de routing en `oracles.rs`:
+- `get_price_for_lending_asset(env, symbol)` — to value debt when borrowing
+- `get_price_for_collateral(env, token_address)` — to value collateral in borrow limit and liquidations
 
 ```rust
 pub mod rwa_oracle {
@@ -539,11 +571,11 @@ cargo build --target wasm32v1-none --release -p rwa-lending
 
 ## Related Contracts
 
-| Contract                    | Description                      | Relationship                 |
-| --------------------------- | -------------------------------- | ---------------------------- |
-| [rwa-oracle](../rwa-oracle) | SEP-40 price feed + RWA metadata | Provides collateral prices   |
-| [rwa-token](../rwa-token)   | SEP-41 + SEP-57 regulated token  | Used as collateral           |
-| rwa-perps                   | Perpetual futures                | Shares oracle infrastructure |
+| Contract                    | Description                      | Relationship                                     |
+| --------------------------- | -------------------------------- | ------------------------------------------------ |
+| [rwa-oracle](../rwa-oracle) | SEP-40 price feed + RWA metadata | Provides RWA asset prices                        |
+| [rwa-token](../rwa-token)   | SEP-41 + SEP-57 regulated token  | Used as collateral **and** as lending asset      |
+| rwa-perps                   | Perpetual futures                | Shares oracle infrastructure                     |
 
 ## License
 
