@@ -44,7 +44,7 @@ jobs:
         run: rustc --version && cargo --version
 
       - name: Install Stellar CLI
-        run: cargo install --locked stellar-cli
+        run: cargo install --locked stellar-cli --no-default-features
 
       - name: Build rwa-oracle WASM first (for contractimport!)
         run: |
