@@ -26,7 +26,7 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
-          targets: wasm32-unknown-unknown
+          targets: wasm32v1-none-unknown
 
       - name: Cache Cargo registry
         uses: actions/cache@v4
@@ -34,6 +34,7 @@ jobs:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
+            ~/.cargo/bin
             stellar-contracts/target
           key: ${{ runner.os }}-cargo-${{ hashFiles('stellar-contracts/Cargo.lock') }}
           restore-keys: |
@@ -42,16 +43,22 @@ jobs:
       - name: Check Rust version
         run: rustc --version && cargo --version
 
+      - name: Install Stellar CLI
+        run: cargo install --locked stellar-cli
+
+      - name: Build rwa-oracle WASM first (for contractimport!)
+        run: |
+          cargo build -p rwa-oracle --target wasm32v1-none-unknown --release
+          mkdir -p target/wasm32v1-none/release
+          cp target/wasm32v1-none-unknown/release/rwa_oracle.wasm target/wasm32v1-none/release/
+
       - name: Build contracts
         run: cargo build --workspace --release
 
       - name: Run tests
         run: cargo test --workspace
 
-      - name: Build WASM targets
-        run: cargo build --workspace --target wasm32-unknown-unknown --release
-
-      - name: Build Soroban Contract
+      - name: Build Soroban contracts (stellar contract build)
         run: stellar contract build
 
   lint:
