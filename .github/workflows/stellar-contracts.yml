@@ -43,11 +43,25 @@ jobs:
       - name: Check Rust version
         run: rustc --version && cargo --version
 
+      - name: Cache Stellar CLI binary
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/stellar-cli
+          key: stellar-cli-25.1.0-${{ runner.os }}
+
       - name: Install system deps for Stellar CLI
         run: sudo apt-get update && sudo apt-get install -y libdbus-1-dev libudev-dev pkg-config
 
       - name: Install Stellar CLI
-        run: cargo install --locked stellar-cli
+        run: |
+          if [ -f ~/.cache/stellar-cli/stellar ]; then
+            cp ~/.cache/stellar-cli/stellar ~/.cargo/bin/stellar
+            stellar version
+          else
+            cargo install --locked stellar-cli
+            mkdir -p ~/.cache/stellar-cli
+            cp ~/.cargo/bin/stellar ~/.cache/stellar-cli/
+          fi
 
       - name: Build rwa-oracle WASM first (for contractimport!)
         run: |
