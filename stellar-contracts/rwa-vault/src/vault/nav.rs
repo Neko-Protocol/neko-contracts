@@ -2,7 +2,7 @@ use soroban_sdk::Env;
 
 use crate::adapters::AdapterClient;
 use crate::common::error::Error;
-use crate::common::types::{VaultStorage, SCALAR_7};
+use crate::common::types::{SCALAR_7, VaultStorage};
 
 pub struct Nav;
 
@@ -18,9 +18,7 @@ impl Nav {
                 if alloc.is_active {
                     let adapter = AdapterClient::new(env, &alloc.adapter);
                     let balance = adapter.a_balance(&vault_addr);
-                    nav = nav
-                        .checked_add(balance)
-                        .ok_or(Error::ArithmeticError)?;
+                    nav = nav.checked_add(balance).ok_or(Error::ArithmeticError)?;
                 }
             }
         }

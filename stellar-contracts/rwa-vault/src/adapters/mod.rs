@@ -1,4 +1,4 @@
-use soroban_sdk::{contractclient, Address, Env};
+use soroban_sdk::{Address, Env, contractclient};
 
 /// Polymorphic adapter interface.
 /// Any contract at `adapter_address` that exposes these functions

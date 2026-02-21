@@ -1,4 +1,4 @@
-use soroban_sdk::{token::TokenClient, Env};
+use soroban_sdk::{Env, token::TokenClient};
 
 use crate::adapters::AdapterClient;
 use crate::common::error::Error;

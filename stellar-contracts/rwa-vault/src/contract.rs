@@ -1,6 +1,4 @@
-use soroban_sdk::{
-    contract, contractimpl, Address, BytesN, Env, String, Symbol, Vec,
-};
+use soroban_sdk::{Address, BytesN, Env, String, Symbol, Vec, contract, contractimpl};
 
 use crate::admin::Admin;
 use crate::common::error::Error;

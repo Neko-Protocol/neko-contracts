@@ -1,7 +1,7 @@
 #![no_std]
 
-mod admin;
 pub mod adapters;
+mod admin;
 mod common;
 mod contract;
 mod strategies;

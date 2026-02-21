@@ -1,4 +1,4 @@
-use soroban_sdk::{contracttype, Address, Map, String, Symbol, Vec};
+use soroban_sdk::{Address, Map, String, Symbol, Vec, contracttype};
 
 // ============================================================================
 // SCALAR CONSTANTS

@@ -1,4 +1,4 @@
-use soroban_sdk::{contractevent, Address, Env, Symbol};
+use soroban_sdk::{Address, Env, Symbol, contractevent};
 
 // ============================================================================
 // Vault events
@@ -123,7 +123,13 @@ impl Events {
         .publish(env);
     }
 
-    pub fn approve(env: &Env, from: &Address, spender: &Address, amount: i128, live_until_ledger: u32) {
+    pub fn approve(
+        env: &Env,
+        from: &Address,
+        spender: &Address,
+        amount: i128,
+        live_until_ledger: u32,
+    ) {
         ApproveEvent {
             from: from.clone(),
             spender: spender.clone(),

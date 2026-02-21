@@ -20,13 +20,7 @@ impl Shares {
         BalanceStorage::add(env, to, amount);
     }
 
-    pub fn transfer_from(
-        env: &Env,
-        spender: &Address,
-        from: &Address,
-        to: &Address,
-        amount: i128,
-    ) {
+    pub fn transfer_from(env: &Env, spender: &Address, from: &Address, to: &Address, amount: i128) {
         AllowanceStorage::subtract(env, from, spender, amount);
         BalanceStorage::subtract(env, from, amount);
         BalanceStorage::add(env, to, amount);

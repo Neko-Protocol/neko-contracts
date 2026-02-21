@@ -1,12 +1,12 @@
-use soroban_sdk::{panic_with_error, Address, BytesN, Env, String, Symbol};
+use soroban_sdk::{Address, BytesN, Env, String, Symbol, panic_with_error};
 
 use crate::adapters::AdapterClient;
 use crate::common::error::Error;
 use crate::common::events::Events;
 use crate::common::storage::Storage;
 use crate::common::types::{
-    ProtocolAllocation, RiskTier, VaultConfig, VaultStatus, VaultStorage, BPS, MAX_PROTOCOLS,
-    SCALAR_7,
+    BPS, MAX_PROTOCOLS, ProtocolAllocation, RiskTier, SCALAR_7, VaultConfig, VaultStatus,
+    VaultStorage,
 };
 use crate::vault::nav::Nav;
 
@@ -121,7 +121,8 @@ impl Admin {
         if config.min_liquidity_bps > BPS as u32
             || config.max_protocol_bps > BPS as u32
             || config.management_fee_bps > 1000  // max 10%
-            || config.performance_fee_bps > 5000  // max 50%
+            || config.performance_fee_bps > 5000
+        // max 50%
         {
             panic_with_error!(env, Error::InvalidConfig);
         }

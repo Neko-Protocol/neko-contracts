@@ -2,11 +2,9 @@
 extern crate std;
 
 use soroban_sdk::{
-    contract, contractimpl,
-    symbol_short,
+    Address, Env, String, contract, contractimpl, symbol_short,
     testutils::Address as _,
     token::{StellarAssetClient, TokenClient},
-    Address, Env, String,
 };
 
 use crate::common::types::{RiskTier, VaultConfig, VaultStatus};
@@ -25,9 +23,7 @@ impl MockAdapter {
         env.storage()
             .instance()
             .set(&symbol_short!("TOKEN"), &deposit_token);
-        env.storage()
-            .instance()
-            .set(&symbol_short!("BAL"), &0i128);
+        env.storage().instance().set(&symbol_short!("BAL"), &0i128);
     }
 
     pub fn a_deposit(env: Env, amount: i128, _from: Address) -> i128 {

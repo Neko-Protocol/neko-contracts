@@ -1,4 +1,4 @@
-use soroban_sdk::{token::TokenClient, Address, Env};
+use soroban_sdk::{Address, Env, token::TokenClient};
 
 use crate::adapters::AdapterClient;
 use crate::common::error::Error;
@@ -104,9 +104,7 @@ impl Withdraw {
                 let to_withdraw = remaining.min(balance);
                 if to_withdraw > 0 {
                     let actual = adapter.a_withdraw(&to_withdraw, &vault_addr);
-                    pulled = pulled
-                        .checked_add(actual)
-                        .ok_or(Error::ArithmeticError)?;
+                    pulled = pulled.checked_add(actual).ok_or(Error::ArithmeticError)?;
                     remaining = remaining
                         .checked_sub(actual)
                         .ok_or(Error::ArithmeticError)?;
