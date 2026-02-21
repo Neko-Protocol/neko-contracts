@@ -58,8 +58,9 @@ jobs:
             curl -sL -o stellar-cli.tar.gz https://github.com/stellar/stellar-cli/releases/download/v25.1.0/stellar-cli-25.1.0-x86_64-unknown-linux-gnu.tar.gz
             tar xzf stellar-cli.tar.gz
             mkdir -p ~/.cargo/bin ~/.cache/stellar-cli
-            cp stellar-cli-25.1.0-x86_64-unknown-linux-gnu/stellar ~/.cargo/bin/
-            cp stellar-cli-25.1.0-x86_64-unknown-linux-gnu/stellar ~/.cache/stellar-cli/
+            STELLAR_BIN=$(find . -type f \( -name stellar -o -name stellar-cli \) | head -1)
+            cp "$STELLAR_BIN" ~/.cargo/bin/stellar
+            cp "$STELLAR_BIN" ~/.cache/stellar-cli/stellar
             chmod +x ~/.cargo/bin/stellar ~/.cache/stellar-cli/stellar
           fi
           stellar version
