@@ -4,7 +4,7 @@
   <strong>Part of the <a href="https://github.com/Neko-Protocol">Neko Protocol</a> DeFi ecosystem on Stellar</strong>
 </p>
 
-A yield aggregator vault for Real-World Assets (RWAs) on Stellar Soroban. This contract accepts a single deposit token (e.g. CETES), automatically distributes it across multiple lending protocols to maximize yield, and issues **vTokens** (SEP-41) representing proportional ownership of the vault's NAV.
+A yield aggregator vault for Real-World Assets (RWAs) on Stellar Soroban. This contract accepts a single deposit token (like CETES, USDY, etc.), automatically distributes it across multiple lending protocols to maximize yield, and issues **vTokens** (SEP-41) representing proportional ownership of the vault's NAV.
 
 ## Neko Protocol Integration
 
