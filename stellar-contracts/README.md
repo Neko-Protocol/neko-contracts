@@ -8,17 +8,25 @@ This workspace is part of the Neko-DApp monorepo and uses Cargo workspaces:
 
 ```text
 stellar-contracts/
-├── Cargo.toml          # Workspace configuration
+├── Cargo.toml              # Workspace configuration
 ├── README.md
-├── rwa-oracle/         # RWA Oracle contract for metadata and price feeds
+├── rwa-oracle/             # RWA Oracle contract for metadata and price feeds
 │   ├── Cargo.toml
 │   ├── README.md
 │   └── src/
-├── rwa-token/          # RWA Token contract with oracle integration
+├── rwa-token/              # RWA Token contract with oracle integration
 │   ├── Cargo.toml
 │   ├── README.md
 │   └── src/
-└── rwa-lending/        # RWA Lending contract (Blend-based protocol)
+├── rwa-lending/            # RWA Lending contract (Blend-based protocol)
+│   ├── Cargo.toml
+│   ├── README.md
+│   └── src/
+├── rwa-vault/              # RWA Yield Aggregator vault (SEP-41 vTokens, NAV, IAdapter)
+│   ├── Cargo.toml
+│   ├── README.md
+│   └── src/
+└── adapter-rwa-lending/    # IAdapter bridge: vault ↔ rwa-lending (cross-contract auth)
     ├── Cargo.toml
     ├── README.md
     └── src/
@@ -65,6 +73,33 @@ Lending and borrowing protocol for Real-World Assets based on the Blend protocol
 
 See [rwa-lending/README.md](./rwa-lending/README.md) for detailed documentation.
 
+### rwa-vault
+
+Yield aggregator vault for Real-World Assets. Accepts a deposit token, distributes across protocols via adapters, and mints **vTokens** (SEP-41) representing proportional NAV ownership.
+
+**Key Features:**
+
+- SEP-41 vToken shares (transfer, approve, burn)
+- NAV accounting and share pricing (1:1 first deposit)
+- IAdapter trait for protocol-agnostic yield routing
+- Strategies: Optimizer, Rebalancer, Harvester (management + performance fees)
+- High water mark for performance fee
+
+See [rwa-vault/README.md](./rwa-vault/README.md) for detailed documentation.
+
+### adapter-rwa-lending
+
+Bridge adapter connecting rwa-vault to rwa-lending. Implements IAdapter with cross-contract auth so the vault can deposit/withdraw through the adapter while the adapter holds bTokens in the lending pool.
+
+**Key Features:**
+
+- IAdapter: `a_deposit`, `a_withdraw`, `a_balance`, `a_get_apy`, `a_harvest`
+- Cross-contract auth via `authorize_as_current_contract` for token transfers
+- Single-asset adapter per instance; vault-only access for deposit/withdraw
+- Yield reflected in b_rate, realized on withdraw
+
+See [adapter-rwa-lending/README.md](./adapter-rwa-lending/README.md) for detailed documentation.
+
 ## Getting Started
 
 ### Prerequisites
@@ -87,6 +122,8 @@ cargo build --workspace --release
 cargo build --package rwa-oracle --release
 cargo build --package rwa-token --release
 cargo build --package rwa-lending --release
+cargo build --package rwa-vault --release
+cargo build --package adapter-rwa-lending --release
 ```
 
 ### Run Tests
@@ -99,38 +136,45 @@ cargo test --workspace
 cargo test --package rwa-oracle
 cargo test --package rwa-token
 cargo test --package rwa-lending
+cargo test --package rwa-vault
+cargo test --package adapter-rwa-lending
 ```
 
 ### Build WASM Contracts
 
-WASM files are built to `target/wasm32v1-none/release/`:
+WASM files are built to `target/wasm32-unknown-unknown/release/` (or `target/wasm32v1-none/release/` when using that target for contractimport! paths):
 
 ```bash
-# Build all contracts to WASM
-cargo build --workspace --target wasm32v1-none-unknown --release
-
-# Build specific contract
-cargo build --package rwa-oracle --target wasm32v1-none-unknown --release
+# Build oracle first so rwa-token and rwa-lending can resolve contractimport!
+cargo build --package rwa-oracle --target wasm32-unknown-unknown --release
+# Then build the rest
+cargo build --workspace --target wasm32-unknown-unknown --release
 ```
 
 ## Contract Dependencies
 
-- **rwa-token** depends on **rwa-oracle**
-- **rwa-lending** depends on both **rwa-oracle** and **rwa-token**
+- **rwa-token** depends on **rwa-oracle** (contractimport! of oracle WASM)
+- **rwa-lending** depends on **rwa-oracle** and **rwa-token** (contractimport! of oracle WASM)
+- **rwa-vault** has no WASM imports; uses IAdapter via contractclient at runtime
+- **adapter-rwa-lending** depends on **rwa-lending** (contractimport! of rwa-lending WASM)
 
 When building contracts that import WASM files from other contracts, ensure the dependency contracts are built first:
 
 ```bash
-# Build in dependency order
-cargo build --package rwa-oracle --target wasm32v1-none-unknown --release
-cargo build --package rwa-token --target wasm32v1-none-unknown --release
-cargo build --package rwa-lending --target wasm32v1-none-unknown --release
+# Build in dependency order (oracle first for rwa-token / rwa-lending)
+cargo build --package rwa-oracle --target wasm32-unknown-unknown --release
+# Copy oracle WASM for contractimport! path if needed:
+# mkdir -p target/wasm32v1-none/release && cp target/wasm32-unknown-unknown/release/rwa_oracle.wasm target/wasm32v1-none/release/
+cargo build --package rwa-token --target wasm32-unknown-unknown --release
+cargo build --package rwa-lending --target wasm32-unknown-unknown --release
+# For adapter: build rwa-lending WASM first, then adapter-rwa-lending
+cargo build --package adapter-rwa-lending --target wasm32-unknown-unknown --release
 ```
 
 ## Workspace Configuration
 
 - **Rust Edition**: 2024
-- **Soroban SDK**: 23.0.2
+- **Soroban SDK**: 23.0.4
 - **License**: Apache-2.0
 - **Author**: OppiaLabs
 
@@ -156,6 +200,8 @@ For detailed documentation on each contract, see their respective README files:
 - [rwa-oracle/README.md](./rwa-oracle/README.md)
 - [rwa-token/README.md](./rwa-token/README.md)
 - [rwa-lending/README.md](./rwa-lending/README.md)
+- [rwa-vault/README.md](./rwa-vault/README.md)
+- [adapter-rwa-lending/README.md](./adapter-rwa-lending/README.md)
 
 ## Resources
 
