@@ -49,19 +49,20 @@ jobs:
           path: ~/.cache/stellar-cli
           key: stellar-cli-25.1.0-${{ runner.os }}
 
-      - name: Install system deps for Stellar CLI
-        run: sudo apt-get update && sudo apt-get install -y libdbus-1-dev libudev-dev pkg-config
-
       - name: Install Stellar CLI
         run: |
           if [ -f ~/.cache/stellar-cli/stellar ]; then
             cp ~/.cache/stellar-cli/stellar ~/.cargo/bin/stellar
-            stellar version
           else
-            cargo install --locked stellar-cli
-            mkdir -p ~/.cache/stellar-cli
-            cp ~/.cargo/bin/stellar ~/.cache/stellar-cli/
+            cd "$(mktemp -d)"
+            curl -sL -o stellar-cli.tar.gz https://github.com/stellar/stellar-cli/releases/download/v25.1.0/stellar-cli-25.1.0-x86_64-unknown-linux-gnu.tar.gz
+            tar xzf stellar-cli.tar.gz
+            mkdir -p ~/.cargo/bin ~/.cache/stellar-cli
+            cp stellar-cli-25.1.0-x86_64-unknown-linux-gnu/stellar ~/.cargo/bin/
+            cp stellar-cli-25.1.0-x86_64-unknown-linux-gnu/stellar ~/.cache/stellar-cli/
+            chmod +x ~/.cargo/bin/stellar ~/.cache/stellar-cli/stellar
           fi
+          stellar version
 
       - name: Build rwa-oracle WASM first (for contractimport!)
         run: |
