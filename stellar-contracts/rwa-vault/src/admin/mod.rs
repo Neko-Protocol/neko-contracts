@@ -15,7 +15,6 @@ pub struct Admin;
 impl Admin {
     // ========== Initialization ==========
 
-    #[allow(clippy::too_many_arguments)]
     pub fn initialize(
         env: &Env,
         admin: &Address,

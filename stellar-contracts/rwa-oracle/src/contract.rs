@@ -22,7 +22,6 @@ pub struct RWAOracle;
 
 #[contractimpl]
 impl RWAOracle {
-    #[allow(clippy::too_many_arguments)]
     pub fn __constructor(
         env: &Env,
         admin: Address,

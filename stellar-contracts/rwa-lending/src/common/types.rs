@@ -197,7 +197,6 @@ impl ReserveData {
 
 #[contracttype]
 #[derive(Clone, Debug)]
-#[allow(clippy::upper_case_acronyms)] // CDP is a standard DeFi acronym
 pub struct CDP {
     /// Collateral (RWA tokens): token address -> amount
     pub collateral: Map<Address, i128>,
