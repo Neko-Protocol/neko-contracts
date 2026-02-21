@@ -510,7 +510,7 @@ cargo build --target wasm32v1-none --release -p rwa-vault
 
 ## License
 
-Apache-2.0
+MIT
 
 ---
 
