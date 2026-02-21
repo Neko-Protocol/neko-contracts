@@ -1,4 +1,3 @@
-#![cfg(test)]
 extern crate std;
 
 use crate::{Asset, Error, RWAOracle, RWAOracleClient};
@@ -287,7 +286,7 @@ fn test_error_handling() {
 
     let result = oracle.try_get_rwa_metadata(&non_existent);
     assert!(result.is_err());
-    assert_eq!(result.unwrap_err().unwrap(), Error::AssetNotFound.into());
+    assert_eq!(result.unwrap_err().unwrap(), Error::AssetNotFound);
 }
 
 // ==================== Price History Pruning Tests ====================

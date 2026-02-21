@@ -258,7 +258,7 @@ fn test_has_bad_debt_no_cdp() {
     // A user without CDP should not have bad debt
     let borrower = Address::generate(&env);
     let has_bad_debt = client.has_bad_debt(&borrower);
-    assert_eq!(has_bad_debt, false);
+    assert!(!has_bad_debt);
 }
 
 #[test]
@@ -294,7 +294,7 @@ fn test_can_create_interest_auction_no_interest() {
 
     // Should not be able to create auction without enough accumulated interest
     let can_create = client.can_create_interest_auction(&usdc);
-    assert_eq!(can_create, false);
+    assert!(!can_create);
 }
 
 #[test]

@@ -1,4 +1,3 @@
-#![cfg(test)]
 extern crate std;
 
 use crate::Error;
@@ -292,15 +291,15 @@ fn test_authorization_and_freeze() {
     let bob = Address::generate(&e);
 
     // Check default authorization (should be false)
-    assert_eq!(token.authorized(&alice), false);
+    assert!(!token.authorized(&alice));
 
     // Set authorization to true
     token.set_authorized(&alice, &true);
-    assert_eq!(token.authorized(&alice), true);
+    assert!(token.authorized(&alice));
 
     // Set authorization to false (freeze)
     token.set_authorized(&alice, &false);
-    assert_eq!(token.authorized(&alice), false);
+    assert!(!token.authorized(&alice));
 
     // Frozen address cannot transfer: authorize alice, freeze bob
     token.set_authorized(&alice, &true);

@@ -1059,6 +1059,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "rwa-vault"
+version = "0.0.1"
+dependencies = [
+ "soroban-sdk",
+]
+
+[[package]]
 name = "schemars"
 version = "0.8.22"
 source = "registry+https://github.com/rust-lang/crates.io-index"

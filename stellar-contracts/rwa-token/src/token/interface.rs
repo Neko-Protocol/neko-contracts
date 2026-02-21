@@ -7,7 +7,6 @@ use crate::token::allowance::AllowanceStorage;
 use crate::token::balance::BalanceStorage;
 
 /// TokenInterface trait definition according to SEP-0041
-#[allow(clippy::module_name_repetitions)]
 pub trait TokenInterface {
     fn allowance(env: Env, from: Address, spender: Address) -> i128;
     fn approve(env: Env, from: Address, spender: Address, amount: i128, live_until_ledger: u32);

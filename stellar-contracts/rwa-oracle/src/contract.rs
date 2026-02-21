@@ -22,7 +22,6 @@ pub struct RWAOracle;
 
 #[contractimpl]
 impl RWAOracle {
-    #[allow(clippy::too_many_arguments)]
     pub fn __constructor(
         env: &Env,
         admin: Address,
@@ -151,14 +150,14 @@ impl RWAOracle {
         // Fallback: iterate through metadata to find matching token_contract
         let state = RWAOracleStorage::get(env);
         for (asset_id, metadata) in state.rwa_metadata.iter() {
-            if let Some(token_contract) = &metadata.tokenization_info.token_contract {
-                if token_contract == token_address {
-                    // Cache the mapping for future lookups
-                    env.storage()
-                        .persistent()
-                        .set(&DataKey::TokenToAsset(token_address.clone()), &asset_id);
-                    return Ok(asset_id);
-                }
+            if let Some(token_contract) = &metadata.tokenization_info.token_contract
+                && token_contract == token_address
+            {
+                // Cache the mapping for future lookups
+                env.storage()
+                    .persistent()
+                    .set(&DataKey::TokenToAsset(token_address.clone()), &asset_id);
+                return Ok(asset_id);
             }
         }
 
@@ -187,10 +186,10 @@ impl RWAOracle {
             panic_with_error!(env, Error::TimestampInFuture);
         }
 
-        if let Some(last_price) = <Self as IsSep40>::lastprice(env, asset_id.clone()) {
-            if timestamp <= last_price.timestamp {
-                panic_with_error!(env, Error::TimestampTooOld);
-            }
+        if let Some(last_price) = <Self as IsSep40>::lastprice(env, asset_id.clone())
+            && timestamp <= last_price.timestamp
+        {
+            panic_with_error!(env, Error::TimestampTooOld);
         }
 
         let mut asset = Self::get_asset_price(env, asset_id.clone()).unwrap_or_else(|| {
@@ -278,26 +277,20 @@ impl IsSep40 for RWAOracle {
     }
 
     fn lastprice(env: &Env, asset: Asset) -> Option<PriceData> {
-        let Some(asset_prices) = RWAOracle::get_asset_price(env, asset.clone()) else {
-            return None;
-        };
+        let asset_prices = RWAOracle::get_asset_price(env, asset.clone())?;
         let timestamp = asset_prices.keys().last()?;
         let price = asset_prices.get(timestamp)?;
         Some(PriceData { price, timestamp })
     }
 
     fn price(env: &Env, asset: Asset, timestamp: u64) -> Option<PriceData> {
-        let Some(asset_prices) = RWAOracle::get_asset_price(env, asset.clone()) else {
-            return None;
-        };
+        let asset_prices = RWAOracle::get_asset_price(env, asset.clone())?;
         let price = asset_prices.get(timestamp)?;
         Some(PriceData { price, timestamp })
     }
 
     fn prices(env: &Env, asset: Asset, records: u32) -> Option<Vec<PriceData>> {
-        let Some(asset_prices) = RWAOracle::get_asset_price(env, asset.clone()) else {
-            return None;
-        };
+        let asset_prices = RWAOracle::get_asset_price(env, asset.clone())?;
         let mut prices = Vec::new(env);
         asset_prices
             .keys()
