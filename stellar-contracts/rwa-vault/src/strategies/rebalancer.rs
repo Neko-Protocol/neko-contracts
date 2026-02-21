@@ -47,11 +47,7 @@ impl Rebalancer {
                 let target_bps = alloc.target_bps;
 
                 // Skip if within threshold
-                let diff = if current_bps > target_bps {
-                    current_bps - target_bps
-                } else {
-                    target_bps - current_bps
-                };
+                let diff = current_bps.abs_diff(target_bps);
 
                 if diff < threshold {
                     continue;

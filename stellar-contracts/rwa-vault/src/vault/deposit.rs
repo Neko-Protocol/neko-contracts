@@ -33,7 +33,7 @@ impl Deposit {
 
         // Transfer deposit_token from user to vault
         let token = TokenClient::new(env, &storage.deposit_token);
-        token.transfer(from, &env.current_contract_address(), &amount);
+        token.transfer(from, env.current_contract_address(), &amount);
 
         // Calculate NAV *before* adding this deposit
         let nav = Nav::calculate(env, &storage)?;

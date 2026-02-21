@@ -14,12 +14,12 @@ impl Nav {
         let vault_addr = env.current_contract_address();
 
         for protocol_id in storage.protocol_ids.iter() {
-            if let Some(alloc) = storage.protocol_allocations.get(protocol_id) {
-                if alloc.is_active {
-                    let adapter = AdapterClient::new(env, &alloc.adapter);
-                    let balance = adapter.a_balance(&vault_addr);
-                    nav = nav.checked_add(balance).ok_or(Error::ArithmeticError)?;
-                }
+            if let Some(alloc) = storage.protocol_allocations.get(protocol_id)
+                && alloc.is_active
+            {
+                let adapter = AdapterClient::new(env, &alloc.adapter);
+                let balance = adapter.a_balance(&vault_addr);
+                nav = nav.checked_add(balance).ok_or(Error::ArithmeticError)?;
             }
         }
 

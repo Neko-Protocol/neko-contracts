@@ -1,4 +1,3 @@
-#![cfg(test)]
 extern crate std;
 
 use soroban_sdk::{
@@ -166,7 +165,7 @@ fn test_deposit_first_is_one_to_one() {
     let (token, token_admin) = create_token(&env, &admin);
 
     // Mint 1000 tokens to user
-    token_admin.mint(&user, &1_000_0000000i128); // 1000 tokens (7 decimals)
+    token_admin.mint(&user, &10_000_000_000_i128); // 1000 tokens (7 decimals)
 
     let vault = create_vault(&env, &admin, &token.address);
 
@@ -190,8 +189,8 @@ fn test_deposit_share_price_proportional() {
     let user2 = Address::generate(&env);
     let (token, token_admin) = create_token(&env, &admin);
 
-    token_admin.mint(&user1, &1_000_0000000i128);
-    token_admin.mint(&user2, &1_000_0000000i128);
+    token_admin.mint(&user1, &10_000_000_000_i128);
+    token_admin.mint(&user2, &10_000_000_000_i128);
 
     let vault = create_vault(&env, &admin, &token.address);
 
@@ -218,7 +217,7 @@ fn test_withdraw_from_liquid_reserve() {
     let user = Address::generate(&env);
     let (token, token_admin) = create_token(&env, &admin);
 
-    token_admin.mint(&user, &1_000_0000000i128);
+    token_admin.mint(&user, &10_000_000_000_i128);
 
     let vault = create_vault(&env, &admin, &token.address);
     let amount = 100_0000000i128;
@@ -242,7 +241,7 @@ fn test_withdraw_full() {
     let user = Address::generate(&env);
     let (token, token_admin) = create_token(&env, &admin);
 
-    token_admin.mint(&user, &1_000_0000000i128);
+    token_admin.mint(&user, &10_000_000_000_i128);
 
     let vault = create_vault(&env, &admin, &token.address);
     let amount = 100_0000000i128;
@@ -285,7 +284,7 @@ fn test_pause_blocks_deposit_not_withdraw() {
     let user = Address::generate(&env);
     let (token, token_admin) = create_token(&env, &admin);
 
-    token_admin.mint(&user, &1_000_0000000i128);
+    token_admin.mint(&user, &10_000_000_000_i128);
 
     let vault = create_vault(&env, &admin, &token.address);
     let amount = 100_0000000i128;
@@ -310,7 +309,7 @@ fn test_paused_deposit_panics() {
     let user = Address::generate(&env);
     let (token, token_admin) = create_token(&env, &admin);
 
-    token_admin.mint(&user, &1_000_0000000i128);
+    token_admin.mint(&user, &10_000_000_000_i128);
 
     let vault = create_vault(&env, &admin, &token.address);
     vault.pause();
@@ -329,7 +328,7 @@ fn test_sep41_transfer() {
     let user2 = Address::generate(&env);
     let (token, token_admin) = create_token(&env, &admin);
 
-    token_admin.mint(&user1, &1_000_0000000i128);
+    token_admin.mint(&user1, &10_000_000_000_i128);
 
     let vault = create_vault(&env, &admin, &token.address);
     let amount = 100_0000000i128;
@@ -353,7 +352,7 @@ fn test_sep41_approve_transfer_from() {
     let spender = Address::generate(&env);
     let (token, token_admin) = create_token(&env, &admin);
 
-    token_admin.mint(&user1, &1_000_0000000i128);
+    token_admin.mint(&user1, &10_000_000_000_i128);
 
     let vault = create_vault(&env, &admin, &token.address);
     vault.deposit(&user1, &100_0000000i128);
