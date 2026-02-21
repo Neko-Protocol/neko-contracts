@@ -105,7 +105,8 @@ impl Collateral {
                         .ok_or(Error::ArithmeticError)?;
                     
                     // Get price of debt asset
-                    let (debt_price, debt_decimals) = Oracles::get_crypto_price_with_decimals(env, debt_asset)?;
+                    // Route to correct oracle based on debt asset type
+                    let (debt_price, debt_decimals) = Oracles::get_price_for_lending_asset(env, debt_asset)?;
                     let price_decimals = 7;
                     let current_debt_value = Oracles::calculate_usd_value(
                         env,

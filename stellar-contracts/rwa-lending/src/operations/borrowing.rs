@@ -69,8 +69,8 @@ impl Borrowing {
                 .checked_div(SCALAR_12)
                 .ok_or(Error::ArithmeticError)?;
 
-            // Get price of debt asset (includes price decimals from oracle)
-            let (debt_price, debt_price_decimals) = Oracles::get_crypto_price_with_decimals(env, asset)?;
+            // Route to correct oracle based on asset type
+            let (debt_price, debt_price_decimals) = Oracles::get_price_for_lending_asset(env, asset)?;
 
             // Calculate debt value in USD
             Oracles::calculate_usd_value(
@@ -84,8 +84,8 @@ impl Borrowing {
             0
         };
 
-        // Calculate new debt value
-        let (asset_price, price_decimals) = Oracles::get_crypto_price_with_decimals(env, asset)?;
+        // Calculate new debt value — route to correct oracle based on asset type
+        let (asset_price, price_decimals) = Oracles::get_price_for_lending_asset(env, asset)?;
         let new_debt_value = Oracles::calculate_usd_value(
             env,
             amount,
@@ -252,8 +252,8 @@ impl Borrowing {
                 continue;
             }
 
-            // Get RWA token price (includes price decimals from oracle)
-            let (rwa_price, price_decimals) = Oracles::get_rwa_price_with_decimals(env, &rwa_token)?;
+            // Route to correct oracle based on collateral asset type
+            let (rwa_price, price_decimals) = Oracles::get_price_for_collateral(env, &rwa_token)?;
             // Get token decimals from RWA token contract
             let rwa_token_client = TokenClient::new(env, &rwa_token);
             let rwa_decimals = rwa_token_client.decimals();
@@ -294,8 +294,8 @@ impl Borrowing {
                         .checked_div(SCALAR_12)
                         .ok_or(Error::ArithmeticError)?;
 
-                    // Get price of debt asset (includes price decimals from oracle)
-                    let (debt_price, price_decimals) = Oracles::get_crypto_price_with_decimals(env, debt_asset)?;
+                    // Route to correct oracle based on debt asset type
+                    let (debt_price, price_decimals) = Oracles::get_price_for_lending_asset(env, debt_asset)?;
                     // Get asset decimals from token contract
                     let token_address = Storage::get_token_contract(env, debt_asset)
                         .ok_or(Error::TokenContractNotSet)?;

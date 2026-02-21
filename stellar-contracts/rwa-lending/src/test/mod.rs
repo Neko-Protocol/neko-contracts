@@ -1,7 +1,7 @@
 #![cfg(test)]
 extern crate std;
 
-use crate::common::types::{InterestRateParams, PoolState};
+use crate::common::types::{AssetType, InterestRateParams, PoolState};
 use crate::{LendingContract, LendingContractClient};
 use crate::rwa_oracle;
 use soroban_sdk::{
@@ -151,8 +151,8 @@ fn test_collateral_factor() {
     let rwa_token = Address::generate(&env);
     let factor = 7_500_000; // 75% (7 decimals)
 
-    // Set collateral factor
-    client.set_collateral_factor(&rwa_token, &factor);
+    // Set collateral factor — RWA token uses RWA oracle
+    client.set_collateral_factor(&rwa_token, &factor, &AssetType::Rwa, &symbol_short!("NVDA"));
     
     // Get collateral factor
     let retrieved_factor = client.get_collateral_factor(&rwa_token);
@@ -382,7 +382,7 @@ fn test_backstop_token_setup() {
     // Set token contract for USDC
     let usdc = symbol_short!("USDC");
     let usdc_token = Address::generate(&env);
-    client.set_token_contract(&usdc, &usdc_token);
+    client.set_token_contract(&usdc, &usdc_token, &AssetType::Crypto);
 
     // Verify pool is configured correctly
     assert_eq!(client.get_pool_state(), PoolState::OnIce);

@@ -3,7 +3,7 @@ use soroban_sdk::{contract, contractimpl, Address, Env, Symbol};
 use crate::admin::Admin;
 use crate::common::error::Error;
 use crate::common::storage::Storage;
-use crate::common::types::{InterestRateParams, PoolState};
+use crate::common::types::{AssetType, InterestRateParams, PoolState};
 use crate::operations::backstop::Backstop;
 use crate::operations::bad_debt::BadDebt;
 use crate::operations::borrowing::Borrowing;
@@ -40,9 +40,17 @@ impl LendingContract {
 
     // ========== Admin Functions ==========
 
-    /// Set collateral factor for an RWA token
-    pub fn set_collateral_factor(env: Env, rwa_token: Address, factor: u32) {
-        Admin::set_collateral_factor(&env, &rwa_token, factor);
+    /// Set collateral factor for a token
+    /// asset_type: Rwa for RWA tokens (uses RWA oracle), Crypto for stable/crypto tokens (uses Reflector oracle)
+    /// symbol: the asset symbol used for oracle queries (e.g. symbol_short!("USDC"))
+    pub fn set_collateral_factor(
+        env: Env,
+        token: Address,
+        factor: u32,
+        asset_type: AssetType,
+        symbol: Symbol,
+    ) {
+        Admin::set_collateral_factor(&env, &token, factor, asset_type, symbol);
     }
 
     /// Set interest rate parameters for an asset
@@ -70,8 +78,9 @@ impl LendingContract {
     }
 
     /// Set token contract address for an asset symbol
-    pub fn set_token_contract(env: Env, asset: Symbol, token_address: Address) {
-        Admin::set_token_contract(&env, &asset, &token_address);
+    /// asset_type: Rwa for RWA tokens (uses RWA oracle), Crypto for stable/crypto tokens (uses Reflector oracle)
+    pub fn set_token_contract(env: Env, asset: Symbol, token_address: Address, asset_type: AssetType) {
+        Admin::set_token_contract(&env, &asset, &token_address, asset_type);
     }
 
     /// Set backstop token contract address

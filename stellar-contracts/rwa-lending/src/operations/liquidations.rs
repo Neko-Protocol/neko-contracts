@@ -6,7 +6,7 @@ use crate::common::types::{AuctionData, AuctionType, AUCTION_DURATION_BLOCKS, MA
 use crate::operations::collateral::Collateral;
 use crate::operations::oracles::Oracles;
 
-/// Liquidation functions AuctionStatus
+/// Liquidation functions using Dutch Auctions (unified with AuctionData)
 pub struct Liquidations;
 
 impl Liquidations {
@@ -79,8 +79,8 @@ impl Liquidations {
             .checked_add(SCALAR_7)
             .ok_or(Error::ArithmeticError)?;
 
-        // Get total collateral value for this RWA token
-        let (rwa_price, rwa_decimals) = Oracles::get_rwa_price_with_decimals(env, rwa_token)?;
+        // Get total collateral value — route to correct oracle based on collateral asset type
+        let (rwa_price, rwa_decimals) = Oracles::get_price_for_collateral(env, rwa_token)?;
         let price_decimals = 7;
         let total_collateral_value = Oracles::calculate_usd_value(
             env,
@@ -90,8 +90,8 @@ impl Liquidations {
             price_decimals,
         )?;
 
-        // Get total debt value
-        let (debt_price, debt_decimals) = Oracles::get_crypto_price_with_decimals(env, debt_asset)?;
+        // Get total debt value — route to correct oracle based on debt asset type
+        let (debt_price, debt_decimals) = Oracles::get_price_for_lending_asset(env, debt_asset)?;
         let total_debt_value = Oracles::calculate_usd_value(
             env,
             debt_amount,
@@ -300,8 +300,8 @@ impl Liquidations {
                 continue;
             }
 
-            // Get RWA token price
-            let (rwa_price, rwa_decimals) = Oracles::get_rwa_price_with_decimals(env, &rwa_token)?;
+            // Route to correct oracle based on collateral asset type
+            let (rwa_price, rwa_decimals) = Oracles::get_price_for_collateral(env, &rwa_token)?;
             let price_decimals = 7;
 
             // Calculate collateral value in USD
@@ -338,8 +338,8 @@ impl Liquidations {
                     .checked_div(SCALAR_12)
                     .ok_or(Error::ArithmeticError)?;
 
-                // Get price of debt asset
-                let (debt_price, debt_decimals) = Oracles::get_crypto_price_with_decimals(env, debt_asset)?;
+                // Route to correct oracle based on debt asset type
+                let (debt_price, debt_decimals) = Oracles::get_price_for_lending_asset(env, debt_asset)?;
                 let price_decimals = 7;
 
                 // Calculate debt value in USD

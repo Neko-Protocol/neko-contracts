@@ -2,7 +2,7 @@ use soroban_sdk::{Address, Env, Symbol};
 
 use crate::common::error::Error;
 use crate::common::storage::Storage;
-use crate::common::types::PriceData;
+use crate::common::types::{AssetType, PriceData};
 use crate::rwa_oracle::{self, Asset};
 
 /// Oracle integration for fetching prices
@@ -117,6 +117,38 @@ impl Oracles {
         let decimals = oracle_client.decimals();
         
         Ok((price_data.price, decimals))
+    }
+
+    /// Get price for a lending asset, routing to the correct oracle based on AssetType.
+    /// Crypto assets use the Reflector oracle; Rwa assets use the RWA oracle.
+    pub fn get_price_for_lending_asset(
+        env: &Env,
+        asset: &Symbol,
+    ) -> Result<(i128, u32), Error> {
+        match Storage::get_asset_type(env, asset) {
+            AssetType::Crypto => Self::get_crypto_price_with_decimals(env, asset),
+            AssetType::Rwa => {
+                let token_addr = Storage::get_token_contract(env, asset)
+                    .ok_or(Error::TokenContractNotSet)?;
+                Self::get_rwa_price_with_decimals(env, &token_addr)
+            }
+        }
+    }
+
+    /// Get price for a collateral token, routing to the correct oracle based on AssetType.
+    /// Rwa collateral uses the RWA oracle; Crypto collateral uses the Reflector oracle.
+    pub fn get_price_for_collateral(
+        env: &Env,
+        token: &Address,
+    ) -> Result<(i128, u32), Error> {
+        match Storage::get_collateral_asset_type(env, token) {
+            AssetType::Rwa => Self::get_rwa_price_with_decimals(env, token),
+            AssetType::Crypto => {
+                let symbol = Storage::get_collateral_symbol(env, token)
+                    .ok_or(Error::TokenContractNotSet)?;
+                Self::get_crypto_price_with_decimals(env, &symbol)
+            }
+        }
     }
 
     /// Calculate USD value of an amount

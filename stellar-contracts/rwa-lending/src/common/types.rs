@@ -72,6 +72,20 @@ pub const BACKSTOP_WITHDRAWAL_QUEUE_SECONDS: u64 = BACKSTOP_WITHDRAWAL_QUEUE_DAY
 pub const BAD_DEBT_LOT_MULTIPLIER: i128 = 12_000_000;
 
 // ============================================================================
+// ASSET TYPE
+// ============================================================================
+
+/// Determines which oracle to use for price queries.
+/// - Crypto: uses the Reflector oracle (USDC, XLM, etc.)
+/// - Rwa: uses the RWA oracle (USDY, CETES, etc.)
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum AssetType {
+    Crypto,
+    Rwa,
+}
+
+// ============================================================================
 // POOL STATE
 // ============================================================================
 
