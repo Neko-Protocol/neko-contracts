@@ -4,11 +4,11 @@
   <strong>Part of the <a href="https://github.com/Neko-Protocol">Neko Protocol</a> DeFi ecosystem on Stellar</strong>
 </p>
 
-Smart contracts for Neko Protocol on Stellar Soroban. This workspace contains five interdependent Real-World Asset (RWA) contracts built with Soroban SDK 23.0.4, forming a complete yield aggregation stack — from tokenized assets and price feeds to lending pools, adapters, and vault management.
+Smart contracts for Neko Protocol on Stellar Soroban. This workspace contains seven interdependent Real-World Asset (RWA) contracts built with Soroban SDK 23.0.4, forming a complete yield aggregation stack — from tokenized assets and price feeds to lending pools, adapters, and vault management.
 
 ## Protocol Architecture
 
-The five contracts form a composable stack. Data and value flow from oracle → token → lending pool ← adapter ← vault:
+The contracts form a composable stack. Data and value flow from oracle → token → lending pool / external protocols ← adapters ← vault:
 
 ```
 ┌──────────────────────────────────────────────────────────────────────────────┐
@@ -19,8 +19,7 @@ The five contracts form a composable stack. Data and value flow from oracle → 
 │   │  rwa-oracle  │─────────────▶│  rwa-token   │                              │
 │   │   (SEP-40)   │              │   (SEP-41)   │                              │
 │   └──────┬───────┘              └──────┬───────┘                              │
-│          │                             │ deposit_token / collateral             │
-│          │ collateral prices           │                                        │
+│          │ collateral prices           │ deposit_token / collateral             │
 │          ▼                             ▼                                        │
 │   ┌────────────────────────────────────────────────┐                           │
 │   │                  rwa-lending                    │                           │
@@ -28,16 +27,22 @@ The five contracts form a composable stack. Data and value flow from oracle → 
 │   │  │ bTokens  │  │ dTokens  │  │  Backstop   │  │                           │
 │   │  │  (lend)  │  │ (borrow) │  │ (insurance) │  │                           │
 │   │  └──────────┘  └──────────┘  └─────────────┘  │                           │
-│   └────────────────────┬───────────────────────────┘                           │
-│                        │ deposit / withdraw (bTokens)                           │
-│                        ▼                                                        │
-│   ┌────────────────────────────────────────────────┐                           │
-│   │              adapter-rwa-lending                │                           │
-│   │   IAdapter bridge + cross-contract auth         │                           │
-│   │   for vault → lending token transfers           │                           │
-│   └────────────────────┬───────────────────────────┘                           │
-│                        │ a_deposit / a_withdraw / a_balance                     │
-│                        ▼                                                        │
+│   └──────────────────────────────────────────────┬─┘                           │
+│                                                  │                              │
+│   ┌──────────────────┐   ┌──────────────────┐   │                              │
+│   │  Blend Protocol  │   │  Soroswap AMM    │   │                              │
+│   │  (lending pool)  │   │  (LP positions)  │   │                              │
+│   └────────┬─────────┘   └────────┬─────────┘   │                              │
+│            │ pool.submit()        │ add/remove   │                              │
+│            ▼                      ▼  liquidity   ▼                              │
+│   ┌──────────────────┐ ┌──────────────────┐ ┌──────────────────┐               │
+│   │  adapter-blend   │ │adapter-soroswap  │ │adapter-rwa-lending│              │
+│   │  IAdapter bridge │ │  IAdapter bridge │ │  IAdapter bridge  │              │
+│   │  BLND harvest    │ │  single-asset    │ │  cross-contract   │              │
+│   └────────┬─────────┘ └────────┬─────────┘ └────────┬──────────┘              │
+│            └──────────┬─────────┘                    │                          │
+│                       │  a_deposit / a_withdraw / a_balance / a_harvest         │
+│                       ▼                                                          │
 │   ┌────────────────────────────────────────────────┐                           │
 │   │                  rwa-vault                      │                           │
 │   │  ┌──────────┐  ┌──────┐  ┌───────────────────┐ │                           │
@@ -59,6 +64,8 @@ The five contracts form a composable stack. Data and value flow from oracle → 
 | [rwa-lending](./rwa-lending) | Lending and borrowing with Dutch auctions | Blend-based | 17 |
 | [rwa-vault](./rwa-vault) | Yield aggregator with NAV and vTokens | SEP-41 | 12 |
 | [adapter-rwa-lending](./adapter-rwa-lending) | IAdapter bridge: vault ↔ rwa-lending | IAdapter | 5 |
+| [adapter-blend](./adapter-blend) | IAdapter bridge: vault ↔ Blend Protocol (BLND harvest) | IAdapter | 5 |
+| [adapter-soroswap](./adapter-soroswap) | IAdapter bridge: vault ↔ Soroswap AMM (single-asset LP) | IAdapter | 6 |
 
 ### rwa-oracle
 
@@ -100,6 +107,22 @@ Bridge adapter connecting rwa-vault to rwa-lending. Implements the IAdapter inte
 
 See [adapter-rwa-lending/README.md](./adapter-rwa-lending/README.md) for detailed documentation.
 
+### adapter-blend
+
+Bridge adapter connecting rwa-vault to an existing Blend Protocol lending pool. Translates generic `a_deposit` / `a_withdraw` calls into Blend's `pool.submit()` API, holds bTokens as its position, and claims BLND liquidity mining rewards via `a_harvest`. Auto-resolves `reserve_id` and `claim_ids` on initialization by querying `pool.get_reserve(deposit_token)`.
+
+**Key features:** IAdapter full implementation including `a_harvest` · `authorize_as_current_contract` for Blend's internal token transfer · bToken accounting (`balance = b_tokens × b_rate / SCALAR_12`) · Ceiling division on b_token withdraw conversion · BLND emissions forwarded to vault
+
+See [adapter-blend/README.md](./adapter-blend/README.md) for detailed documentation.
+
+### adapter-soroswap
+
+Bridge adapter connecting rwa-vault to a Soroswap AMM liquidity pool. Enables single-asset entry: the adapter automatically swaps half the deposit into the pair token, adds liquidity, holds LP tokens as its position, and unwinds back to the deposit token on withdrawal. The pair address is auto-resolved at initialization via `router.router_pair_for(token_a, token_b)`.
+
+**Key features:** Single-asset entry (vault deposits only token_a) · Auto pair resolution via Soroswap router · Pre-computes `b_optimal` before `add_liquidity` to avoid auth mismatch · Proportional LP burn on partial withdrawals · Round-trip swap back to token_a on withdraw · AMM trading fees accrue passively into LP value
+
+See [adapter-soroswap/README.md](./adapter-soroswap/README.md) for detailed documentation.
+
 ## Contract Dependencies
 
 | Contract | WASM imports |
@@ -109,8 +132,10 @@ See [adapter-rwa-lending/README.md](./adapter-rwa-lending/README.md) for detaile
 | `rwa-lending` | `rwa-oracle` WASM (`contractimport!`) |
 | `rwa-vault` | — (uses `IAdapter` via `contractclient` at runtime) |
 | `adapter-rwa-lending` | `rwa-lending` WASM (`contractimport!`) |
+| `adapter-blend` | `external_wasms/blend/pool.wasm` (`contractimport!`) |
+| `adapter-soroswap` | `external_wasms/soroswap/router.wasm` + `pair.wasm` (`contractimport!`) |
 
-Contracts that import WASMs must be built after their dependencies.
+Contracts that import WASMs must be built after their dependencies. The external Blend and Soroswap WASMs must be present in `external_wasms/` before building the corresponding adapters.
 
 ## Build & Test
 
@@ -131,13 +156,17 @@ cargo build --workspace --release
 # 1. Oracle — imported by rwa-token and rwa-lending
 cargo build --target wasm32v1-none --release -p rwa-oracle
 
-# 2. Token and lending — lending imported by adapter
+# 2. Token and lending — lending imported by adapter-rwa-lending
 cargo build --target wasm32v1-none --release -p rwa-token
 cargo build --target wasm32v1-none --release -p rwa-lending
 
-# 3. Vault and adapter
+# 3. Vault and adapters
 cargo build --target wasm32v1-none --release -p rwa-vault
 cargo build --target wasm32v1-none --release -p adapter-rwa-lending
+
+# 4. External-protocol adapters (require external_wasms/ to be present)
+cargo build --target wasm32v1-none --release -p adapter-blend
+cargo build --target wasm32v1-none --release -p adapter-soroswap
 ```
 
 WASM output: `target/wasm32v1-none/release/<contract_name>.wasm`
@@ -154,6 +183,8 @@ cargo test -p rwa-token
 cargo test -p rwa-lending
 cargo test -p rwa-vault
 cargo test -p adapter-rwa-lending
+cargo test -p adapter-blend
+cargo test -p adapter-soroswap
 ```
 
 ## Workspace Configuration
@@ -174,6 +205,9 @@ cargo test -p adapter-rwa-lending
 stellar-contracts/
 ├── Cargo.toml                  # Workspace configuration
 ├── README.md
+├── external_wasms/             # Pre-compiled WASMs for compile-time imports
+│   ├── blend/                  # Blend Protocol: pool.wasm
+│   └── soroswap/               # Soroswap: router.wasm, pair.wasm, factory.wasm
 ├── rwa-oracle/                 # SEP-40 RWA price feeds and metadata
 │   ├── Cargo.toml
 │   ├── README.md
@@ -190,7 +224,15 @@ stellar-contracts/
 │   ├── Cargo.toml
 │   ├── README.md
 │   └── src/
-└── adapter-rwa-lending/        # IAdapter bridge: vault ↔ rwa-lending
+├── adapter-rwa-lending/        # IAdapter bridge: vault ↔ rwa-lending
+│   ├── Cargo.toml
+│   ├── README.md
+│   └── src/
+├── adapter-blend/              # IAdapter bridge: vault ↔ Blend Protocol
+│   ├── Cargo.toml
+│   ├── README.md
+│   └── src/
+└── adapter-soroswap/           # IAdapter bridge: vault ↔ Soroswap AMM
     ├── Cargo.toml
     ├── README.md
     └── src/

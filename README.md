@@ -31,18 +31,18 @@ Neko Protocol enables users to deposit tokenized real-world assets (RWAs) as col
 │  │  (Chainlink / Pyth)  │   │   │  Dutch auctions · AssetType    │            │
 │  └───────────┬──────────┘   │   └───────────────┬────────────────┘            │
 │              │              │                   │                              │
-│  ┌───────────▼──────────┐   │   ┌───────────────▼────────────────┐            │
-│  │       Backstop       │   │   │       adapter-rwa-lending       │            │
-│  │  (Emergency reserves)│   │   │   IAdapter + cross-contract     │            │
-│  └──────────────────────┘   │   │   auth for token transfers      │            │
-│                             │   └───────────────┬────────────────┘            │
-│                             │                   │  a_deposit / a_withdraw      │
-│                             │                   ▼                              │
-│                             │   ┌────────────────────────────────┐            │
-│                             │   │           rwa-vault             │            │
-│                             │   │  vTokens (SEP-41) · NAV        │            │
-│                             │   │  Optimizer · Rebalancer · Fees  │            │
-│                             │   └────────────────────────────────┘            │
+│  ┌───────────▼──────────┐   │   ┌────────────────────────────────┐            │
+│  │       Backstop       │   │   │           rwa-vault             │            │
+│  │  (Emergency reserves)│   │   │  vTokens (SEP-41) · NAV        │            │
+│  └──────────────────────┘   │   │  Optimizer · Rebalancer · Fees  │            │
+│                             │   └──────┬──────────┬──────────┬───┘            │
+│                             │          │          │          │                 │
+│                             │          ▼          ▼          ▼                 │
+│                             │   ┌──────────┐ ┌────────┐ ┌─────────────┐      │
+│                             │   │ adapter- │ │adapter-│ │  adapter-   │      │
+│                             │   │ rwa-lend │ │ blend  │ │  soroswap   │      │
+│                             │   │ IAdapter │ │IAdapter│ │  IAdapter   │      │
+│                             │   └──────────┘ └────────┘ └─────────────┘      │
 └─────────────────────────────┴────────────────────────────────────────────────┘
 ```
 
@@ -60,7 +60,9 @@ neko-contracts/
     ├── rwa-token/              # SEP-41 + SEP-57 regulated RWA token
     ├── rwa-lending/            # Blend-based lending with Dutch auctions
     ├── rwa-vault/              # Yield aggregator with NAV and vTokens
-    └── adapter-rwa-lending/    # IAdapter bridge: vault ↔ rwa-lending
+    ├── adapter-rwa-lending/    # IAdapter bridge: vault ↔ rwa-lending
+    ├── adapter-blend/          # IAdapter bridge: vault ↔ Blend Protocol
+    └── adapter-soroswap/       # IAdapter bridge: vault ↔ Soroswap AMM
 ```
 
 ---
@@ -119,8 +121,10 @@ A composable DeFi stack for RWAs on Stellar Soroban — from oracle price feeds 
 | `rwa-lending` | Lending, borrowing, Dutch auctions | Blend-based | 17 |
 | `rwa-vault` | Yield aggregator with vTokens and NAV | SEP-41 | 12 |
 | `adapter-rwa-lending` | IAdapter bridge: vault ↔ rwa-lending | IAdapter | 5 |
+| `adapter-blend` | IAdapter bridge: vault ↔ Blend Protocol (+ BLND harvest) | IAdapter | 5 |
+| `adapter-soroswap` | IAdapter bridge: vault ↔ Soroswap AMM (single-asset LP) | IAdapter | 6 |
 
-**Key features:** SEP-40/41/57 standards · Dutch auction liquidations · Yield aggregation · Cross-contract auth pattern · Blend V2 3-segment interest rates · AssetType oracle routing
+**Key features:** SEP-40/41/57 standards · Dutch auction liquidations · Yield aggregation · Cross-contract auth pattern · Blend V2 3-segment interest rates · AssetType oracle routing · Multi-protocol adapter system (lending + AMM + external pools)
 
 ### Quick Start
 
@@ -137,6 +141,8 @@ cargo test --workspace
 cargo build --target wasm32v1-none --release -p rwa-oracle
 cargo build --target wasm32v1-none --release -p rwa-lending
 cargo build --target wasm32v1-none --release -p adapter-rwa-lending
+cargo build --target wasm32v1-none --release -p adapter-blend
+cargo build --target wasm32v1-none --release -p adapter-soroswap
 ```
 
 See [stellar-contracts/README.md](./stellar-contracts/README.md) for full documentation.
