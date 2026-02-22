@@ -24,18 +24,21 @@ forge test --gas-report                       # Gas profiling
 
 # Deploy
 forge script script/Deploy.s.sol --rpc-url $ETH_RPC_URL --broadcast
+forge script script/DeployPyth.s.sol --rpc-url $ETH_RPC_URL --broadcast
 ```
 
 ### Stellar Contracts (Cargo/Soroban)
 ```bash
 # Build
 cargo build --workspace --release
-cargo build --package rwa-oracle --release    # Single package
-cargo build --target wasm32v1-none --release  # WASM
+cargo build --package rwa-oracle --release            # Single package
+cargo build --package adapter-blend --release         # Single adapter
+cargo build --target wasm32v1-none --release          # WASM target
 
 # Test
 cargo test --workspace
-cargo test --package rwa-lending              # Single package
+cargo test --package rwa-lending                      # Single package
+cargo test --package adapter-rwa-lending              # Adapter tests
 ```
 
 ### Quick Setup (EVM)
@@ -50,18 +53,34 @@ cd evm-contracts/rwa-lending && bash setup.sh
 - **Tokens:** `OToken.sol` (collateral receipts), `DebtToken.sol` (debt tracking) - both non-transferable
 - **Oracles:** Chainlink (`PriceOracle.sol`), Pyth (`PythPriceOracle.sol`), Custom (`CustomPriceOracle.sol`)
 - **Math:** WadRayMath library for fixed-point precision (WAD=18, RAY=27 decimals)
+- **Interfaces:** `ILendingPool`, `IBackstop`, `IOToken`, `IDebtToken`, `IPriceOracle`
 
 ### Stellar (`stellar-contracts/`)
+
+#### Core Packages
+- **rwa-oracle:** SEP-40 compliant RWA price feeds and metadata
+- **rwa-token:** SEP-41 + SEP-57 regulated RWA token with compliance controls and oracle integration
 - **rwa-lending:** Blend-based lending with Dutch auction liquidations
-- **rwa-oracle:** SEP-40 compliant RWA price feeds
-- **rwa-token:** RWA token with oracle integration
-- Modular design: operations split into `admin/`, `borrowing/`, `collateral/`, `lending/`, `liquidations/`, `backstop/`
+  - Operations: `backstop`, `bad_debt`, `borrowing`, `collateral`, `interest`, `interest_auction`, `lending`, `liquidations`, `oracles`
+- **rwa-vault:** SEP-41 yield aggregator with NAV-based vToken pricing and multi-strategy rebalancing
+
+#### Adapters (`stellar-contracts/adapters/`)
+All adapters implement the IAdapter protocol to plug into rwa-vault:
+- **adapter-blend:** Bridge vault to Blend Protocol lending pools with BLND token harvesting
+- **adapter-soroswap:** Bridge vault to Soroswap AMM for single-asset LP positions
+- **adapter-rwa-lending:** Bridge vault to the native rwa-lending protocol
+
+#### WASMs (`stellar-contracts/wasms/`)
+- **external_wasms/blend/:** `backstop.wasm`, `comet.wasm`, `emitter.wasm`, `pool.wasm`, `pool_factory.wasm`
+- **external_wasms/soroswap/:** `factory.wasm`, `pair.wasm`, `router.wasm`
+- **neko_wasms/:** Built Neko contract WASMs (generated, not committed)
 
 ### Shared Concepts
 - Health factor calculations for liquidation triggers
 - Dynamic interest rates based on utilization
 - Collateral factors (LTV, liquidation thresholds)
 - Reserve/backstop mechanisms for protocol safety
+- IAdapter pattern for composable yield strategies in rwa-vault
 
 ## Environment Variables
 
@@ -73,3 +92,5 @@ cd evm-contracts/rwa-lending && bash setup.sh
 - Stellar uses Soroban SDK 23.0.4, Rust Edition 2024
 - Tests mirror source structure in `test/` directories
 - OpenZeppelin contracts for ERC20, AccessControl, ReentrancyGuard
+- Adapters are `cdylib` crates; some also expose `rlib` for testing utilities
+- Workspace Cargo.toml at `stellar-contracts/Cargo.toml` defines all members including adapters
