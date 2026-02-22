@@ -15,7 +15,7 @@ use crate::{RwaLendingAdapter, RwaLendingAdapterClient};
 /// Build first: cargo build --target wasm32v1-none --release -p rwa-oracle
 mod rwa_oracle {
     soroban_sdk::contractimport!(
-        file = "../target/wasm32v1-none/release/rwa_oracle.wasm"
+        file = "../../target/wasm32v1-none/release/rwa_oracle.wasm"
     );
 }
 
