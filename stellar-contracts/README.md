@@ -67,13 +67,19 @@ The contracts form a composable stack. Data and value flow from oracle → token
 | [adapter-blend](./adapter-blend) | IAdapter bridge: vault ↔ Blend Protocol (BLND harvest) | IAdapter | 5 |
 | [adapter-soroswap](./adapter-soroswap) | IAdapter bridge: vault ↔ Soroswap AMM (single-asset LP) | IAdapter | 6 |
 
+---
+
 ### rwa-oracle
 
 Oracle contract for Real-World Asset metadata and price feeds. Implements the SEP-40 Oracle Consumer Interface and extends it with comprehensive RWA metadata management: 9 asset types (stocks, bonds, commodities, real estate, etc.), 6 valuation methods, tokenization tracking, price history up to 1,000 records per asset, and configurable staleness.
 
+---
+
 **Key features:** SEP-40 compatible · RWA metadata + asset classification · Price history with auto-pruning · Configurable staleness · TTL management
 
 See [rwa-oracle/README.md](./rwa-oracle/README.md) for detailed documentation.
+
+---
 
 ### rwa-token
 
@@ -83,6 +89,8 @@ Regulated fungible token for tokenized RWAs on Stellar. Implements the SEP-41 To
 
 See [rwa-token/README.md](./rwa-token/README.md) for detailed documentation.
 
+---
+
 ### rwa-lending
 
 Lending and borrowing protocol for Real-World Assets based on the Blend protocol design. Supports both crypto (USDC, XLM) and RWA tokens as lending assets and collateral. Routes oracle calls automatically via `AssetType` — `Crypto` assets use the Reflector oracle, `Rwa` assets use the RWA oracle.
@@ -90,6 +98,8 @@ Lending and borrowing protocol for Real-World Assets based on the Blend protocol
 **Key features:** bTokens/dTokens · AssetType oracle routing · 3-segment piecewise interest rate model · Unified Dutch auction system (liquidation, bad debt, interest) · Backstop insurance · Health factor guards (min 1.1, max 1.15)
 
 See [rwa-lending/README.md](./rwa-lending/README.md) for detailed documentation.
+
+---
 
 ### rwa-vault
 
@@ -99,6 +109,8 @@ Yield aggregator vault for RWAs. Accepts a single deposit token, distributes cap
 
 See [rwa-vault/README.md](./rwa-vault/README.md) for detailed documentation.
 
+---
+
 ### adapter-rwa-lending
 
 Bridge adapter connecting rwa-vault to rwa-lending. Implements the IAdapter interface with cross-contract auth so the vault can deposit and withdraw through the adapter while the adapter holds bTokens in the lending pool. Each adapter instance manages a single RWA asset in a single rwa-lending pool.
@@ -106,6 +118,8 @@ Bridge adapter connecting rwa-vault to rwa-lending. Implements the IAdapter inte
 **Key features:** IAdapter (`a_deposit`, `a_withdraw`, `a_balance`, `a_get_apy`, `a_harvest`) · `authorize_as_current_contract` for token transfers · Ceiling division on b_token conversion · Vault-only access control · TTL management
 
 See [adapter-rwa-lending/README.md](./adapter-rwa-lending/README.md) for detailed documentation.
+
+---
 
 ### adapter-blend
 
@@ -115,6 +129,8 @@ Bridge adapter connecting rwa-vault to an existing Blend Protocol lending pool. 
 
 See [adapter-blend/README.md](./adapter-blend/README.md) for detailed documentation.
 
+---
+
 ### adapter-soroswap
 
 Bridge adapter connecting rwa-vault to a Soroswap AMM liquidity pool. Enables single-asset entry: the adapter automatically swaps half the deposit into the pair token, adds liquidity, holds LP tokens as its position, and unwinds back to the deposit token on withdrawal. The pair address is auto-resolved at initialization via `router.router_pair_for(token_a, token_b)`.
@@ -122,6 +138,8 @@ Bridge adapter connecting rwa-vault to a Soroswap AMM liquidity pool. Enables si
 **Key features:** Single-asset entry (vault deposits only token_a) · Auto pair resolution via Soroswap router · Pre-computes `b_optimal` before `add_liquidity` to avoid auth mismatch · Proportional LP burn on partial withdrawals · Round-trip swap back to token_a on withdraw · AMM trading fees accrue passively into LP value
 
 See [adapter-soroswap/README.md](./adapter-soroswap/README.md) for detailed documentation.
+
+---
 
 ## Contract Dependencies
 
