@@ -19,19 +19,19 @@ use crate::{BlendAdapter, BlendAdapterClient};
 // ============================================================================
 
 mod blend_pool {
-    soroban_sdk::contractimport!(file = "../external_wasms/blend/pool.wasm");
+    soroban_sdk::contractimport!(file = "../../wasms/external_wasms/blend/pool.wasm");
 }
 mod blend_backstop {
-    soroban_sdk::contractimport!(file = "../external_wasms/blend/backstop.wasm");
+    soroban_sdk::contractimport!(file = "../../wasms/external_wasms/blend/backstop.wasm");
 }
 mod blend_pool_factory {
-    soroban_sdk::contractimport!(file = "../external_wasms/blend/pool_factory.wasm");
+    soroban_sdk::contractimport!(file = "../../wasms/external_wasms/blend/pool_factory.wasm");
 }
 mod blend_emitter {
-    soroban_sdk::contractimport!(file = "../external_wasms/blend/emitter.wasm");
+    soroban_sdk::contractimport!(file = "../../wasms/external_wasms/blend/emitter.wasm");
 }
 mod blend_comet {
-    soroban_sdk::contractimport!(file = "../external_wasms/blend/comet.wasm");
+    soroban_sdk::contractimport!(file = "../../wasms/external_wasms/blend/comet.wasm");
 }
 
 // ============================================================================

@@ -3,6 +3,29 @@
 version = 4
 
 [[package]]
+name = "adapter-blend"
+version = "0.0.1"
+dependencies = [
+ "soroban-sdk",
+]
+
+[[package]]
+name = "adapter-rwa-lending"
+version = "0.0.1"
+dependencies = [
+ "rwa-oracle",
+ "rwa-token",
+ "soroban-sdk",
+]
+
+[[package]]
+name = "adapter-soroswap"
+version = "0.0.1"
+dependencies = [
+ "soroban-sdk",
+]
+
+[[package]]
 name = "ahash"
 version = "0.8.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"

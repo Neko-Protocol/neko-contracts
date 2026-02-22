@@ -19,13 +19,13 @@ use crate::{SoroswapAdapter, SoroswapAdapterClient};
 // ============================================================================
 
 mod soroswap_factory {
-    soroban_sdk::contractimport!(file = "../external_wasms/soroswap/factory.wasm");
+    soroban_sdk::contractimport!(file = "../../wasms/external_wasms/soroswap/factory.wasm");
 }
 mod soroswap_router {
-    soroban_sdk::contractimport!(file = "../external_wasms/soroswap/router.wasm");
+    soroban_sdk::contractimport!(file = "../../wasms/external_wasms/soroswap/router.wasm");
 }
 mod soroswap_pair {
-    soroban_sdk::contractimport!(file = "../external_wasms/soroswap/pair.wasm");
+    soroban_sdk::contractimport!(file = "../../wasms/external_wasms/soroswap/pair.wasm");
 }
 
 // ============================================================================

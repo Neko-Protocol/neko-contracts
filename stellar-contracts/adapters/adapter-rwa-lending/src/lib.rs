@@ -14,6 +14,6 @@ pub use contract::{RwaLendingAdapter, RwaLendingAdapterClient};
 /// Build rwa-lending first: cargo build --target wasm32v1-none --release -p rwa-lending
 pub mod rwa_lending {
     soroban_sdk::contractimport!(
-        file = "../target/wasm32v1-none/release/rwa_lending.wasm"
+        file = "../../target/wasm32v1-none/release/rwa_lending.wasm"
     );
 }

@@ -5,9 +5,9 @@ members = [
   "rwa-oracle",
   "rwa-token",
   "rwa-vault",
-  "adapter-rwa-lending",
-  "adapter-blend",
-  "adapter-soroswap"
+  "adapters/adapter-rwa-lending",
+  "adapters/adapter-blend",
+  "adapters/adapter-soroswap"
 ]
 
 [workspace.package]
