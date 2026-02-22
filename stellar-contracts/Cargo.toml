@@ -6,7 +6,8 @@ members = [
   "rwa-token",
   "rwa-vault",
   "adapter-rwa-lending",
-  "adapter-blend"
+  "adapter-blend",
+  "adapter-soroswap"
 ]
 
 [workspace.package]
