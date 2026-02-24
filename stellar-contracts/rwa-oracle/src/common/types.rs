@@ -5,6 +5,7 @@ use crate::Asset;
 // Storage keys
 pub const ADMIN_KEY: Symbol = soroban_sdk::symbol_short!("ADMIN");
 pub const STORAGE: Symbol = soroban_sdk::symbol_short!("STORAGE");
+pub const PAUSED_KEY: Symbol = soroban_sdk::symbol_short!("PAUSED");
 
 // Limits
 pub const MAX_PRICE_HISTORY: u32 = 1000;

@@ -559,6 +559,95 @@ fn test_different_assets_independent_timestamps() {
     assert_eq!(last_price_tsla.timestamp, 500);
 }
 
+// ==================== Pause / Unpause Tests ====================
+
+#[test]
+#[should_panic(expected = "Error(Contract, #9)")]
+fn test_pause_blocks_set_asset_price() {
+    let e = Env::default();
+    e.mock_all_auths();
+
+    let oracle = create_rwa_oracle_contract(&e);
+    let asset = Asset::Other(Symbol::new(&e, "NVDA"));
+
+    oracle.pause();
+
+    oracle.set_asset_price(&asset, &100, &1_000_000_000);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #9)")]
+fn test_pause_blocks_add_assets() {
+    let e = Env::default();
+    e.mock_all_auths();
+
+    let oracle = create_rwa_oracle_contract(&e);
+    let new_asset = Asset::Other(Symbol::new(&e, "AAPL"));
+
+    oracle.pause();
+
+    let assets_to_add = Vec::from_array(&e, [new_asset]);
+    oracle.add_assets(&assets_to_add);
+}
+
+#[test]
+fn test_unpause_allows_set_asset_price() {
+    let e = Env::default();
+    e.mock_all_auths();
+
+    let oracle = create_rwa_oracle_contract(&e);
+    let asset = Asset::Other(Symbol::new(&e, "NVDA"));
+
+    oracle.pause();
+    oracle.unpause();
+
+    oracle.set_asset_price(&asset, &100, &1_000_000_000);
+
+    let price = oracle.lastprice(&asset);
+    assert!(price.is_some());
+    assert_eq!(price.unwrap().price, 100);
+}
+
+#[test]
+fn test_pause_allows_read_operations() {
+    let e = Env::default();
+    e.mock_all_auths();
+
+    let oracle = create_rwa_oracle_contract(&e);
+    let asset = Asset::Other(Symbol::new(&e, "NVDA"));
+
+    oracle.set_asset_price(&asset, &100, &1_000_000_000);
+
+    oracle.pause();
+
+    let price = oracle.lastprice(&asset);
+    assert!(price.is_some());
+    assert_eq!(price.unwrap().price, 100);
+}
+
+#[test]
+#[should_panic]
+fn test_only_admin_can_pause() {
+    let e = Env::default();
+    // Do NOT mock all auths — non-admin call must fail
+    let oracle = create_rwa_oracle_contract(&e);
+    oracle.pause();
+}
+
+#[test]
+#[should_panic]
+fn test_only_admin_can_unpause() {
+    let e = Env::default();
+    e.mock_all_auths();
+    let oracle = create_rwa_oracle_contract(&e);
+    oracle.pause();
+
+    // Create a second env without mocked auths to simulate non-admin
+    let e2 = Env::default();
+    let oracle2 = RWAOracleClient::new(&e2, &oracle.address);
+    oracle2.unpause();
+}
+
 // ==================== TTL Extension Tests ====================
 
 #[test]

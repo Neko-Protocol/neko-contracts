@@ -48,6 +48,21 @@ impl RWAOracle {
         Admin::upgrade(env, new_wasm_hash);
     }
 
+    /// Pause the contract, blocking all write operations (admin only)
+    pub fn pause(env: &Env) {
+        Admin::pause(env);
+    }
+
+    /// Unpause the contract, re-enabling write operations (admin only)
+    pub fn unpause(env: &Env) {
+        Admin::unpause(env);
+    }
+
+    /// Returns true if the contract is currently paused
+    pub fn is_paused(env: &Env) -> bool {
+        Admin::is_paused(env)
+    }
+
     // ==================== RWA Admin Functions ====================
 
     /// Register or update RWA metadata for an asset
@@ -231,6 +246,7 @@ impl RWAOracle {
 #[contractimpl]
 impl IsSep40Admin for RWAOracle {
     fn add_assets(env: &Env, assets: Vec<Asset>) {
+        Admin::require_not_paused(env);
         Admin::require_admin(env);
         let current_storage = RWAOracleStorage::get(env);
         let mut assets_vec = current_storage.assets;
@@ -257,6 +273,7 @@ impl IsSep40Admin for RWAOracle {
     }
 
     fn set_asset_price(env: &Env, asset_id: Asset, price: i128, timestamp: u64) {
+        Admin::require_not_paused(env);
         Admin::require_admin(env);
         RWAOracle::set_asset_price_internal(env, asset_id, price, timestamp);
     }
