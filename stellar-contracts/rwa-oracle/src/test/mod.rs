@@ -3,7 +3,9 @@ extern crate std;
 use crate::{Asset, Error, RWAOracle, RWAOracleClient};
 use crate::{RWAAssetType, RWAMetadata, TokenizationInfo, ValuationMethod};
 
-use soroban_sdk::{Address, Env, String, Symbol, Vec, testutils::Address as _, testutils::Ledger};
+use soroban_sdk::{
+    Address, Env, IntoVal, String, Symbol, Vec, testutils::Address as _, testutils::Ledger,
+};
 
 fn create_rwa_oracle_contract<'a>(e: &Env) -> RWAOracleClient<'a> {
     set_ledger_timestamp(e, 2_000_000_000);
@@ -12,6 +14,19 @@ fn create_rwa_oracle_contract<'a>(e: &Env) -> RWAOracleClient<'a> {
     let asset_vec = Vec::from_array(e, [asset_xlm.clone(), asset_usdt.clone()]);
     let admin = Address::generate(e);
     let contract_id = e.register(RWAOracle, (admin, asset_vec, asset_usdt, 14u32, 300u32));
+
+    RWAOracleClient::new(e, &contract_id)
+}
+
+fn create_rwa_oracle_contract_with_admin<'a>(e: &Env, admin: &Address) -> RWAOracleClient<'a> {
+    set_ledger_timestamp(e, 2_000_000_000);
+    let asset_xlm: Asset = Asset::Other(Symbol::new(e, "NVDA"));
+    let asset_usdt: Asset = Asset::Other(Symbol::new(e, "TSLA"));
+    let asset_vec = Vec::from_array(e, [asset_xlm.clone(), asset_usdt.clone()]);
+    let contract_id = e.register(
+        RWAOracle,
+        (admin.clone(), asset_vec, asset_usdt, 14u32, 300u32),
+    );
 
     RWAOracleClient::new(e, &contract_id)
 }
@@ -791,6 +806,8 @@ fn test_ttl_extended_on_add_assets() {
     assert!(oracle.assets().contains(&new_asset));
 }
 
+// ==================== Asset Registration Enforcement Tests ====================
+
 #[test]
 #[should_panic(expected = "Error(Contract, #12)")]
 fn test_metadata_rejected_for_unregistered_asset() {
@@ -876,3 +893,124 @@ fn test_metadata_accepted_after_add_assets() {
     assert_eq!(retrieved_type, Some(metadata.asset_type));
 }
 
+// ==================== Two-Step Admin Transfer Tests ====================
+
+#[test]
+fn test_propose_admin_sets_pending() {
+    let e = Env::default();
+    e.mock_all_auths();
+
+    let oracle = create_rwa_oracle_contract(&e);
+    let new_admin = Address::generate(&e);
+
+    oracle.propose_admin(&new_admin);
+
+    let pending = oracle.get_pending_admin();
+    assert!(pending.is_some());
+    assert_eq!(pending.unwrap(), new_admin);
+}
+
+#[test]
+fn test_accept_admin_transfers_ownership() {
+    let e = Env::default();
+    e.mock_all_auths();
+
+    let oracle = create_rwa_oracle_contract(&e);
+    let new_admin = Address::generate(&e);
+
+    oracle.propose_admin(&new_admin);
+    oracle.accept_admin();
+
+    let current_admin = oracle.admin();
+    assert_eq!(current_admin, new_admin);
+}
+
+#[test]
+fn test_pending_cleared_after_accept() {
+    let e = Env::default();
+    e.mock_all_auths();
+
+    let oracle = create_rwa_oracle_contract(&e);
+    let new_admin = Address::generate(&e);
+
+    oracle.propose_admin(&new_admin);
+    oracle.accept_admin();
+
+    let pending = oracle.get_pending_admin();
+    assert!(pending.is_none());
+}
+
+#[test]
+#[should_panic]
+fn test_only_admin_can_propose() {
+    let e = Env::default();
+
+    let admin = Address::generate(&e);
+    let non_admin = Address::generate(&e);
+    let oracle = create_rwa_oracle_contract_with_admin(&e, &admin);
+
+    // Only authorize non_admin, not the actual admin
+    e.mock_auths(&[soroban_sdk::testutils::MockAuth {
+        address: &non_admin,
+        invoke: &soroban_sdk::testutils::MockAuthInvoke {
+            contract: &oracle.address,
+            fn_name: "propose_admin",
+            args: soroban_sdk::vec![&e, non_admin.into_val(&e)],
+            sub_invokes: &[],
+        },
+    }]);
+
+    let new_admin = Address::generate(&e);
+    oracle.propose_admin(&new_admin);
+}
+
+#[test]
+#[should_panic]
+fn test_only_pending_can_accept() {
+    let e = Env::default();
+
+    let admin = Address::generate(&e);
+    let random = Address::generate(&e);
+    let oracle = create_rwa_oracle_contract_with_admin(&e, &admin);
+
+    // Propose a new admin using the real admin's auth
+    e.mock_auths(&[soroban_sdk::testutils::MockAuth {
+        address: &admin,
+        invoke: &soroban_sdk::testutils::MockAuthInvoke {
+            contract: &oracle.address,
+            fn_name: "propose_admin",
+            args: soroban_sdk::vec![&e, random.clone().into_val(&e)],
+            sub_invokes: &[],
+        },
+    }]);
+    oracle.propose_admin(&random);
+
+    // Try to accept with a different random address (not the pending admin)
+    let imposter = Address::generate(&e);
+    e.mock_auths(&[soroban_sdk::testutils::MockAuth {
+        address: &imposter,
+        invoke: &soroban_sdk::testutils::MockAuthInvoke {
+            contract: &oracle.address,
+            fn_name: "accept_admin",
+            args: soroban_sdk::vec![&e],
+            sub_invokes: &[],
+        },
+    }]);
+    oracle.accept_admin();
+}
+
+#[test]
+fn test_propose_again_replaces_pending() {
+    let e = Env::default();
+    e.mock_all_auths();
+
+    let oracle = create_rwa_oracle_contract(&e);
+    let admin_a = Address::generate(&e);
+    let admin_b = Address::generate(&e);
+
+    oracle.propose_admin(&admin_a);
+    assert_eq!(oracle.get_pending_admin().unwrap(), admin_a);
+
+    oracle.propose_admin(&admin_b);
+    assert_eq!(oracle.get_pending_admin().unwrap(), admin_b);
+}
