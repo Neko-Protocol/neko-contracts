@@ -33,4 +33,10 @@ pub enum Error {
 
     /// Contract is paused
     Paused = 9,
+
+    /// Invalid decimals parameter
+    InvalidDecimals = 10,
+
+    /// Invalid resolution parameter
+    InvalidResolution = 11,
 }

@@ -22,6 +22,11 @@ pub const MAX_TIMESTAMP_DRIFT_SECONDS: u64 = 300;
 // Default max staleness: 24 hours
 pub const DEFAULT_MAX_STALENESS: u64 = 86_400;
 
+// Parameters validation bounds
+pub const MIN_DECIMALS: u32 = 2;
+pub const MAX_DECIMALS: u32 = 18;
+pub const MIN_RESOLUTION: u32 = 1;
+
 #[contracttype]
 pub enum DataKey {
     Prices(Asset),

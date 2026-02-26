@@ -79,6 +79,81 @@ fn test_rwa_oracle_initialization() {
     assert_eq!(oracle.max_staleness(), 86_400); // default 24h
 }
 
+// validations
+
+#[test]
+#[should_panic(expected = "Error(Contract, #10)")]
+fn test_decimals_zero_rejected() {
+    let e = Env::default();
+    e.mock_all_auths();
+
+    let admin = Address::generate(&e);
+    let asset = Asset::Other(Symbol::new(&e, "TEST"));
+    let assets = Vec::from_array(&e, [asset.clone()]);
+
+    // decimal 0 should panic
+    e.register(RWAOracle, (admin, assets, asset, 0u32, 300u32));
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #10)")]
+fn test_decimals_one_rejected() {
+    let e = Env::default();
+    e.mock_all_auths();
+
+    let admin = Address::generate(&e);
+    let asset = Asset::Other(Symbol::new(&e, "TEST"));
+    let assets = Vec::from_array(&e, [asset.clone()]);
+
+    // decimals = 1 should panic
+    e.register(RWAOracle, (admin, assets, asset, 1u32, 300u32));
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #10)")]
+fn test_decimals_above_max_rejected() {
+    let e = Env::default();
+    e.mock_all_auths();
+
+    let admin = Address::generate(&e);
+    let asset = Asset::Other(Symbol::new(&e, "TEST"));
+    let assets = Vec::from_array(&e, [asset.clone()]);
+
+    // decimals > MAX_DECIMALS should panic
+    e.register(RWAOracle, (admin, assets, asset, 19u32, 300u32));
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #11)")]
+fn test_resolution_zero_rejected() {
+    let e = Env::default();
+    e.mock_all_auths();
+
+    let admin = Address::generate(&e);
+    let asset = Asset::Other(Symbol::new(&e, "TEST"));
+    let assets = Vec::from_array(&e, [asset.clone()]);
+
+    // resolution = 0 should panic
+    e.register(RWAOracle, (admin, assets, asset, 8u32, 0u32));
+}
+
+#[test]
+fn test_valid_params_accepted() {
+    let e = Env::default();
+    e.mock_all_auths();
+
+    let admin = Address::generate(&e);
+    let asset = Asset::Other(Symbol::new(&e, "TEST"));
+    let assets = Vec::from_array(&e, [asset.clone()]);
+
+    // should succeed with valid parameters
+    let contract_id = e.register(RWAOracle, (admin, assets.clone(), asset.clone(), 8u32, 60u32));
+    let client = RWAOracleClient::new(&e, &contract_id);
+    assert_eq!(client.decimals(), 8);
+    assert_eq!(client.resolution(), 60);
+}
+
+
 // ==================== RWA Metadata Tests ====================
 
 #[test]
