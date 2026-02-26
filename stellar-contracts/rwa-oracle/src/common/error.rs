@@ -27,4 +27,7 @@ pub enum Error {
 
     /// Timestamp is too old or not strictly increasing
     TimestampTooOld = 8,
+
+    /// Contract is paused
+    Paused = 9,
 }

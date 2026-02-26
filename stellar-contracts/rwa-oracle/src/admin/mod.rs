@@ -1,7 +1,8 @@
-use soroban_sdk::{Address, BytesN, Env};
+use soroban_sdk::{Address, BytesN, Env, panic_with_error};
 
+use crate::common::error::Error;
 use crate::common::storage::RWAOracleStorage;
-use crate::common::types::{ADMIN_KEY, INSTANCE_BUMP_AMOUNT, INSTANCE_LIFETIME_THRESHOLD};
+use crate::common::types::{ADMIN_KEY, INSTANCE_BUMP_AMOUNT, INSTANCE_LIFETIME_THRESHOLD, PAUSED_KEY};
 
 /// Administrative functions for the oracle contract
 pub struct Admin;
@@ -39,6 +40,35 @@ impl Admin {
         state.max_staleness = max_seconds;
         RWAOracleStorage::set(env, &state);
         Self::extend_instance_ttl(env);
+    }
+
+    /// Check whether the contract is currently paused
+    pub fn is_paused(env: &Env) -> bool {
+        env.storage()
+            .instance()
+            .get(&PAUSED_KEY)
+            .unwrap_or(false)
+    }
+
+    /// Pause the contract (admin only)
+    pub fn pause(env: &Env) {
+        Self::require_admin(env);
+        env.storage().instance().set(&PAUSED_KEY, &true);
+        Self::extend_instance_ttl(env);
+    }
+
+    /// Unpause the contract (admin only)
+    pub fn unpause(env: &Env) {
+        Self::require_admin(env);
+        env.storage().instance().set(&PAUSED_KEY, &false);
+        Self::extend_instance_ttl(env);
+    }
+
+    /// Panic with Paused error if the contract is currently paused
+    pub fn require_not_paused(env: &Env) {
+        if Self::is_paused(env) {
+            panic_with_error!(env, Error::Paused);
+        }
     }
 
     /// Extend instance TTL
