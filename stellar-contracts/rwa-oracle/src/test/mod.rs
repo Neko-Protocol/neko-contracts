@@ -88,6 +88,9 @@ fn test_set_rwa_metadata() {
 
     let oracle = create_rwa_oracle_contract(&e);
     let asset_id = Symbol::new(&e, "RWA_BOND_2024");
+    
+    // Add asset to vector before setting metadata
+    oracle.add_assets(&Vec::from_array(&e, [Asset::Other(asset_id.clone())]));
 
     let metadata = create_test_metadata(&e, asset_id.clone());
     oracle.set_rwa_metadata(&asset_id, &metadata);
@@ -127,6 +130,7 @@ fn test_metadata_asset_types() {
 
     for (id, asset_type) in types {
         let asset_id = Symbol::new(&e, id);
+        oracle.add_assets(&Vec::from_array(&e, [Asset::Other(asset_id.clone())]));
         let mut metadata = create_test_metadata(&e, asset_id.clone());
         metadata.asset_type = asset_type.clone();
         oracle.set_rwa_metadata(&asset_id, &metadata);
@@ -154,6 +158,7 @@ fn test_metadata_valuation_methods() {
 
     for (id, method) in methods {
         let asset_id = Symbol::new(&e, id);
+        oracle.add_assets(&Vec::from_array(&e, [Asset::Other(asset_id.clone())]));
         let mut metadata = create_test_metadata(&e, asset_id.clone());
         metadata.valuation_method = method.clone();
         oracle.set_rwa_metadata(&asset_id, &metadata);
@@ -172,6 +177,7 @@ fn test_update_tokenization_info() {
 
     let oracle = create_rwa_oracle_contract(&e);
     let asset_id = Symbol::new(&e, "RWA_BOND");
+    oracle.add_assets(&Vec::from_array(&e, [Asset::Other(asset_id.clone())]));
 
     let metadata = create_test_metadata(&e, asset_id.clone());
     oracle.set_rwa_metadata(&asset_id, &metadata);
@@ -229,6 +235,7 @@ fn test_get_all_rwa_assets() {
 
     let asset_id1 = Symbol::new(&e, "RWA_1");
     let asset_id2 = Symbol::new(&e, "RWA_2");
+    oracle.add_assets(&Vec::from_array(&e, [Asset::Other(asset_id1.clone()), Asset::Other(asset_id2.clone())]));
 
     let metadata1 = create_test_metadata(&e, asset_id1.clone());
     let mut metadata2 = create_test_metadata(&e, asset_id2.clone());
@@ -599,6 +606,7 @@ fn test_ttl_extended_on_metadata_update() {
 
     let oracle = create_rwa_oracle_contract(&e);
     let asset_id = Symbol::new(&e, "RWA_BOND");
+    oracle.add_assets(&Vec::from_array(&e, [Asset::Other(asset_id.clone())]));
 
     let metadata = create_test_metadata(&e, asset_id.clone());
     oracle.set_rwa_metadata(&asset_id, &metadata);
@@ -631,3 +639,89 @@ fn test_ttl_extended_on_add_assets() {
 
     assert!(oracle.assets().contains(&new_asset));
 }
+
+#[test]
+#[should_panic(expected = "Error(Contract, #12)")]
+fn test_metadata_rejected_for_unregistered_asset() {
+    let e = Env::default();
+    e.mock_all_auths();
+
+    let oracle = create_rwa_oracle_contract(&e);
+    let unregistered_id = Symbol::new(&e, "NOT_REGISTERED");
+
+    let metadata = create_test_metadata(&e, unregistered_id.clone());
+
+    // This should panic - asset not in assets vector
+    oracle.set_rwa_metadata(&unregistered_id, &metadata);
+}
+
+#[test]
+fn test_metadata_accepted_for_registered_asset() {
+    let e = Env::default();
+    e.mock_all_auths();
+
+    let oracle = create_rwa_oracle_contract(&e);
+
+    // NVDA is registered in constructor
+    let asset_id = Symbol::new(&e, "NVDA");
+    let asset = Asset::Other(asset_id.clone());
+
+    let mut metadata = create_test_metadata(&e, asset_id.clone());
+    metadata.asset_type = RWAAssetType::Equity;
+
+    oracle.set_rwa_metadata(&asset_id, &metadata);
+
+    // Both should return the same asset type
+    let retrieved_metadata = oracle.get_rwa_metadata(&asset_id);
+    let retrieved_type = oracle.get_rwa_asset_type(&asset);
+
+    assert_eq!(retrieved_metadata.asset_type, RWAAssetType::Equity);
+    assert_eq!(retrieved_type, Some(RWAAssetType::Equity));
+}
+
+#[test]
+fn test_asset_type_always_synced_with_metadata() {
+    let e = Env::default();
+    e.mock_all_auths();
+
+    let oracle = create_rwa_oracle_contract(&e);
+
+    // NVDA is registered in constructor
+    let asset_id = Symbol::new(&e, "NVDA");
+    let asset = Asset::Other(asset_id.clone());
+
+    let mut metadata = create_test_metadata(&e, asset_id.clone());
+    metadata.asset_type = RWAAssetType::Equity;
+
+    oracle.set_rwa_metadata(&asset_id, &metadata);
+
+    // Both should return the same asset type
+    let retrieved_metadata = oracle.get_rwa_metadata(&asset_id);
+    let retrieved_type = oracle.get_rwa_asset_type(&asset);
+
+    assert_eq!(retrieved_metadata.asset_type, RWAAssetType::Equity);
+    assert_eq!(retrieved_type, Some(RWAAssetType::Equity));
+}
+
+#[test]
+fn test_metadata_accepted_after_add_assets() {
+    let e = Env::default();
+    e.mock_all_auths();
+
+    let oracle = create_rwa_oracle_contract(&e);
+    let asset_id = Symbol::new(&e, "NEW_BOND");
+    let asset = Asset::Other(asset_id.clone());
+
+    // Add asset via add_assets
+    oracle.add_assets(&Vec::from_array(&e, [asset.clone()]));
+
+    let metadata = create_test_metadata(&e, asset_id.clone());
+    oracle.set_rwa_metadata(&asset_id, &metadata);
+
+    let retrieved_metadata = oracle.get_rwa_metadata(&asset_id);
+    let retrieved_type = oracle.get_rwa_asset_type(&asset);
+
+    assert_eq!(retrieved_metadata.asset_id, asset_id);
+    assert_eq!(retrieved_type, Some(metadata.asset_type));
+}
+

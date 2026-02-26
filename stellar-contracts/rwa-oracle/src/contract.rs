@@ -59,16 +59,28 @@ impl RWAOracle {
         Admin::require_admin(env);
         let mut state = RWAOracleStorage::get(env);
 
+        // Verify asset is registered
+        let asset = Asset::Other(asset_id.clone());
+        let asset_exists = state.assets.iter().any(|a| match a {
+            Asset::Other(sym) => sym == asset_id,
+            Asset::Stellar(addr) => {
+                if let Asset::Stellar(check_addr) = &asset {
+                    addr == *check_addr
+                } else {
+                    false
+                }
+            }
+        });
+
+        if !asset_exists {
+            panic_with_error!(env, Error::AssetNotRegistered);
+        }
+
         // Set metadata
         state.rwa_metadata.set(asset_id.clone(), metadata.clone());
 
-        // Update asset type mapping if asset exists in price feed
-        if let Some(asset) = state.assets.iter().find(|a| match a {
-            Asset::Other(sym) => sym == &asset_id,
-            _ => false,
-        }) {
-            state.asset_types.set(asset.clone(), metadata.asset_type);
-        }
+        // Always update asset_types (no conditional needed - we verified above)
+        state.asset_types.set(asset, metadata.asset_type);
 
         RWAOracleStorage::set(env, &state);
         Admin::extend_instance_ttl(env);

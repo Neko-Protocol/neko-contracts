@@ -10,6 +10,9 @@ pub enum Error {
     /// Asset already exists
     AssetAlreadyExists = 2,
 
+    /// Asset not registered in the oracle
+    AssetNotRegistered = 12,
+
     /// Invalid RWA type
     InvalidRWAType = 3,
 
