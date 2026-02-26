@@ -89,6 +89,20 @@ impl RWAOracle {
             .get(asset_id.clone())
             .unwrap_or_else(|| panic_with_error!(env, Error::AssetNotFound));
 
+        // Invalidate old cache if token_contract changed
+        if let Some(old_token) = &metadata.tokenization_info.token_contract {
+            let is_changing = match &tokenization_info.token_contract {
+                Some(new_token) => old_token != new_token,
+                None => true,
+            };
+
+            if is_changing {
+                env.storage()
+                    .persistent()
+                    .remove(&DataKey::TokenToAsset(old_token.clone()));
+            }
+        }
+
         metadata.tokenization_info = tokenization_info;
         metadata.updated_at = env.ledger().timestamp();
         state.rwa_metadata.set(asset_id, metadata);

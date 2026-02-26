@@ -559,6 +559,123 @@ fn test_different_assets_independent_timestamps() {
     assert_eq!(last_price_tsla.timestamp, 500);
 }
 
+// ==================== Token Cache Invalidation Tests ====================
+
+#[test]
+fn test_token_cache_invalidated_on_change() {
+    let e = Env::default();
+    e.mock_all_auths();
+
+    let oracle = create_rwa_oracle_contract(&e);
+    let asset_id = Symbol::new(&e, "NVDA");
+
+    // Set initial metadata with token A
+    let token_a = Address::generate(&e);
+    let mut metadata = create_test_metadata(&e, asset_id.clone());
+    metadata.tokenization_info.token_contract = Some(token_a.clone());
+    oracle.set_rwa_metadata(&asset_id, &metadata);
+
+    // Lookup token A (this caches the mapping)
+    let result_a = oracle.get_asset_id_from_token(&token_a);
+    assert_eq!(result_a, asset_id);
+
+    // Change to token B
+    let token_b = Address::generate(&e);
+    let new_info = TokenizationInfo {
+        token_contract: Some(token_b.clone()),
+        total_supply: Some(1_000_000),
+        underlying_asset_id: None,
+        tokenization_date: None,
+    };
+    oracle.update_tokenization_info(&asset_id, &new_info);
+
+    // Old token A should no longer resolve
+    let result_old = oracle.try_get_asset_id_from_token(&token_a);
+    assert!(result_old.is_err());
+}
+
+#[test]
+fn test_new_token_resolves_after_change() {
+    let e = Env::default();
+    e.mock_all_auths();
+
+    let oracle = create_rwa_oracle_contract(&e);
+    let asset_id = Symbol::new(&e, "NVDA");
+
+    // Set initial metadata with token A
+    let token_a = Address::generate(&e);
+    let mut metadata = create_test_metadata(&e, asset_id.clone());
+    metadata.tokenization_info.token_contract = Some(token_a.clone());
+    oracle.set_rwa_metadata(&asset_id, &metadata);
+
+    // Lookup token A to cache it
+    let _ = oracle.get_asset_id_from_token(&token_a);
+
+    // Change to token B
+    let token_b = Address::generate(&e);
+    let new_info = TokenizationInfo {
+        token_contract: Some(token_b.clone()),
+        total_supply: Some(1_000_000),
+        underlying_asset_id: None,
+        tokenization_date: None,
+    };
+    oracle.update_tokenization_info(&asset_id, &new_info);
+
+    // New token B should resolve correctly
+    let result_new = oracle.get_asset_id_from_token(&token_b);
+    assert_eq!(result_new, asset_id);
+}
+
+#[test]
+fn test_cache_works_when_unchanged() {
+    let e = Env::default();
+    e.mock_all_auths();
+
+    let oracle = create_rwa_oracle_contract(&e);
+    let asset_id = Symbol::new(&e, "NVDA");
+
+    // Set metadata with token A
+    let token_a = Address::generate(&e);
+    let mut metadata = create_test_metadata(&e, asset_id.clone());
+    metadata.tokenization_info.token_contract = Some(token_a.clone());
+    oracle.set_rwa_metadata(&asset_id, &metadata);
+
+    // Lookup twice — both should return correct asset_id
+    let result1 = oracle.get_asset_id_from_token(&token_a);
+    assert_eq!(result1, asset_id);
+
+    let result2 = oracle.get_asset_id_from_token(&token_a);
+    assert_eq!(result2, asset_id);
+}
+
+#[test]
+fn test_first_token_set_no_crash() {
+    let e = Env::default();
+    e.mock_all_auths();
+
+    let oracle = create_rwa_oracle_contract(&e);
+    let asset_id = Symbol::new(&e, "NVDA");
+
+    // Set metadata with no token contract initially
+    let mut metadata = create_test_metadata(&e, asset_id.clone());
+    metadata.tokenization_info.token_contract = None;
+    oracle.set_rwa_metadata(&asset_id, &metadata);
+
+    // Set token for the first time (no previous token to invalidate)
+    let token_a = Address::generate(&e);
+    let new_info = TokenizationInfo {
+        token_contract: Some(token_a.clone()),
+        total_supply: Some(1_000_000),
+        underlying_asset_id: None,
+        tokenization_date: None,
+    };
+    oracle.update_tokenization_info(&asset_id, &new_info);
+
+    // Token should resolve correctly
+    let result = oracle.get_asset_id_from_token(&token_a);
+    assert_eq!(result, asset_id);
+}
+
 // ==================== TTL Extension Tests ====================
 
 #[test]
