@@ -7,7 +7,7 @@ use crate::common::error::Error;
 use crate::common::storage::RWAOracleStorage;
 use crate::common::types::{
     DataKey, MAX_PRICE_HISTORY, MAX_TIMESTAMP_DRIFT_SECONDS, PERSISTENT_BUMP_AMOUNT,
-    PERSISTENT_LIFETIME_THRESHOLD,
+    PERSISTENT_LIFETIME_THRESHOLD, MIN_DECIMALS, MAX_DECIMALS, MIN_RESOLUTION,
 };
 use crate::rwa::types::{RWAAssetType, RWAMetadata, TokenizationInfo};
 use crate::sep40::{IsSep40, IsSep40Admin};
@@ -30,6 +30,14 @@ impl RWAOracle {
         decimals: u32,
         resolution: u32,
     ) -> Result<(), Error> {
+        // Validate parameters before saving any state
+        if decimals < MIN_DECIMALS || decimals > MAX_DECIMALS {
+            panic_with_error!(env, Error::InvalidDecimals);
+        }
+        if resolution < MIN_RESOLUTION {
+            panic_with_error!(env, Error::InvalidResolution);
+        }
+
         Admin::set_admin(env, &admin);
         let oracle = RWAOracleStorage::new(env, assets.clone(), base, decimals, resolution);
         RWAOracleStorage::set(env, &oracle);
