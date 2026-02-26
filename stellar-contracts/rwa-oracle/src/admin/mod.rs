@@ -2,7 +2,9 @@ use soroban_sdk::{Address, BytesN, Env, panic_with_error};
 
 use crate::common::error::Error;
 use crate::common::storage::RWAOracleStorage;
-use crate::common::types::{ADMIN_KEY, INSTANCE_BUMP_AMOUNT, INSTANCE_LIFETIME_THRESHOLD, PAUSED_KEY};
+use crate::common::types::{
+    ADMIN_KEY, INSTANCE_BUMP_AMOUNT, INSTANCE_LIFETIME_THRESHOLD, PAUSED_KEY, PENDING_ADMIN_KEY,
+};
 
 /// Administrative functions for the oracle contract
 pub struct Admin;
@@ -39,6 +41,32 @@ impl Admin {
         let mut state = RWAOracleStorage::get(env);
         state.max_staleness = max_seconds;
         RWAOracleStorage::set(env, &state);
+        Self::extend_instance_ttl(env);
+    }
+
+    /// Get the pending admin address (if any)
+    pub fn get_pending_admin(env: &Env) -> Option<Address> {
+        env.storage().instance().get(&PENDING_ADMIN_KEY)
+    }
+
+    /// Propose a new admin (two-step transfer, step 1)
+    pub fn propose_admin(env: &Env, new_admin: &Address) {
+        Self::require_admin(env);
+        env.storage().instance().set(&PENDING_ADMIN_KEY, new_admin);
+        Self::extend_instance_ttl(env);
+    }
+
+    /// Accept admin role (two-step transfer, step 2)
+    pub fn accept_admin(env: &Env) {
+        let pending: Address = env
+            .storage()
+            .instance()
+            .get(&PENDING_ADMIN_KEY)
+            .expect("No pending admin");
+        pending.require_auth();
+
+        env.storage().instance().set(&ADMIN_KEY, &pending);
+        env.storage().instance().remove(&PENDING_ADMIN_KEY);
         Self::extend_instance_ttl(env);
     }
 

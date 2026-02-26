@@ -4,6 +4,7 @@ use crate::Asset;
 
 // Storage keys
 pub const ADMIN_KEY: Symbol = soroban_sdk::symbol_short!("ADMIN");
+pub const PENDING_ADMIN_KEY: Symbol = soroban_sdk::symbol_short!("PADMIN");
 pub const STORAGE: Symbol = soroban_sdk::symbol_short!("STORAGE");
 pub const PAUSED_KEY: Symbol = soroban_sdk::symbol_short!("PAUSED");
 

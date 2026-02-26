@@ -56,6 +56,26 @@ impl RWAOracle {
         Admin::upgrade(env, new_wasm_hash);
     }
 
+    /// Get the current admin address
+    pub fn admin(env: &Env) -> Address {
+        Admin::get_admin(env)
+    }
+
+    /// Get the pending admin address (if any)
+    pub fn get_pending_admin(env: &Env) -> Option<Address> {
+        Admin::get_pending_admin(env)
+    }
+
+    /// Propose a new admin (step 1 of two-step transfer)
+    pub fn propose_admin(env: &Env, new_admin: Address) {
+        Admin::propose_admin(env, &new_admin);
+    }
+
+    /// Accept admin role (step 2 of two-step transfer)
+    pub fn accept_admin(env: &Env) {
+        Admin::accept_admin(env);
+    }
+
     /// Pause the contract, blocking all write operations (admin only)
     pub fn pause(env: &Env) {
         Admin::pause(env);
