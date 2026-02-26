@@ -163,6 +163,68 @@ fn test_metadata_valuation_methods() {
     }
 }
 
+#[test]
+#[should_panic(expected = "Error(Contract, #4)")]
+fn test_metadata_asset_id_mismatch_rejected() {
+    let e = Env::default();
+    e.mock_all_auths();
+
+    let oracle = create_rwa_oracle_contract(&e);
+    let key_id = Symbol::new(&e, "NVDA");
+    let wrong_id = Symbol::new(&e, "TSLA");
+
+    let metadata = create_test_metadata(&e, wrong_id.clone());
+    oracle.set_rwa_metadata(&key_id, &metadata);
+}
+
+#[test]
+fn test_metadata_asset_id_match_accepted() {
+    let e = Env::default();
+    e.mock_all_auths();
+
+    let oracle = create_rwa_oracle_contract(&e);
+    let asset_id = Symbol::new(&e, "NVDA");
+
+    let metadata = create_test_metadata(&e, asset_id.clone());
+    oracle.set_rwa_metadata(&asset_id, &metadata);
+    let retrieved = oracle.try_get_rwa_metadata(&asset_id).unwrap().unwrap();
+    assert_eq!(retrieved.asset_id, asset_id);
+}
+
+#[test]
+fn test_metadata_mismatch_no_state_change() {
+    let e = Env::default();
+    e.mock_all_auths();
+
+    let oracle = create_rwa_oracle_contract(&e);
+    let key_id = Symbol::new(&e, "NVDA");
+    let wrong_id = Symbol::new(&e, "TSLA");
+
+    let metadata = create_test_metadata(&e, wrong_id.clone());
+    let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        oracle.set_rwa_metadata(&key_id, &metadata);
+    }));
+
+    let result = oracle.try_get_rwa_metadata(&key_id);
+    assert!(result.is_err());
+    assert_eq!(result.unwrap_err().unwrap(), Error::AssetNotFound);
+}
+
+#[test]
+fn test_metadata_consistency_after_set() {
+    let e = Env::default();
+    e.mock_all_auths();
+
+    let oracle = create_rwa_oracle_contract(&e);
+    let asset_id = Symbol::new(&e, "NVDA");
+
+    let metadata = create_test_metadata(&e, asset_id.clone());
+    oracle.set_rwa_metadata(&asset_id, &metadata);
+
+    let retrieved = oracle.get_rwa_metadata(&asset_id);
+    assert_eq!(retrieved.asset_id, asset_id);
+}
+
 // ==================== Tokenization Info Tests ====================
 
 #[test]
