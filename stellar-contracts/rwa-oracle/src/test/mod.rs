@@ -3,7 +3,9 @@ extern crate std;
 use crate::{Asset, Error, RWAOracle, RWAOracleClient};
 use crate::{RWAAssetType, RWAMetadata, TokenizationInfo, ValuationMethod};
 
-use soroban_sdk::{Address, Env, String, Symbol, Vec, testutils::Address as _, testutils::Ledger};
+use soroban_sdk::{
+    Address, Env, IntoVal, String, Symbol, Vec, testutils::Address as _, testutils::Ledger,
+};
 
 fn create_rwa_oracle_contract<'a>(e: &Env) -> RWAOracleClient<'a> {
     set_ledger_timestamp(e, 2_000_000_000);
@@ -12,6 +14,19 @@ fn create_rwa_oracle_contract<'a>(e: &Env) -> RWAOracleClient<'a> {
     let asset_vec = Vec::from_array(e, [asset_xlm.clone(), asset_usdt.clone()]);
     let admin = Address::generate(e);
     let contract_id = e.register(RWAOracle, (admin, asset_vec, asset_usdt, 14u32, 300u32));
+
+    RWAOracleClient::new(e, &contract_id)
+}
+
+fn create_rwa_oracle_contract_with_admin<'a>(e: &Env, admin: &Address) -> RWAOracleClient<'a> {
+    set_ledger_timestamp(e, 2_000_000_000);
+    let asset_xlm: Asset = Asset::Other(Symbol::new(e, "NVDA"));
+    let asset_usdt: Asset = Asset::Other(Symbol::new(e, "TSLA"));
+    let asset_vec = Vec::from_array(e, [asset_xlm.clone(), asset_usdt.clone()]);
+    let contract_id = e.register(
+        RWAOracle,
+        (admin.clone(), asset_vec, asset_usdt, 14u32, 300u32),
+    );
 
     RWAOracleClient::new(e, &contract_id)
 }
@@ -79,6 +94,81 @@ fn test_rwa_oracle_initialization() {
     assert_eq!(oracle.max_staleness(), 86_400); // default 24h
 }
 
+// validations
+
+#[test]
+#[should_panic(expected = "Error(Contract, #10)")]
+fn test_decimals_zero_rejected() {
+    let e = Env::default();
+    e.mock_all_auths();
+
+    let admin = Address::generate(&e);
+    let asset = Asset::Other(Symbol::new(&e, "TEST"));
+    let assets = Vec::from_array(&e, [asset.clone()]);
+
+    // decimal 0 should panic
+    e.register(RWAOracle, (admin, assets, asset, 0u32, 300u32));
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #10)")]
+fn test_decimals_one_rejected() {
+    let e = Env::default();
+    e.mock_all_auths();
+
+    let admin = Address::generate(&e);
+    let asset = Asset::Other(Symbol::new(&e, "TEST"));
+    let assets = Vec::from_array(&e, [asset.clone()]);
+
+    // decimals = 1 should panic
+    e.register(RWAOracle, (admin, assets, asset, 1u32, 300u32));
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #10)")]
+fn test_decimals_above_max_rejected() {
+    let e = Env::default();
+    e.mock_all_auths();
+
+    let admin = Address::generate(&e);
+    let asset = Asset::Other(Symbol::new(&e, "TEST"));
+    let assets = Vec::from_array(&e, [asset.clone()]);
+
+    // decimals > MAX_DECIMALS should panic
+    e.register(RWAOracle, (admin, assets, asset, 19u32, 300u32));
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #11)")]
+fn test_resolution_zero_rejected() {
+    let e = Env::default();
+    e.mock_all_auths();
+
+    let admin = Address::generate(&e);
+    let asset = Asset::Other(Symbol::new(&e, "TEST"));
+    let assets = Vec::from_array(&e, [asset.clone()]);
+
+    // resolution = 0 should panic
+    e.register(RWAOracle, (admin, assets, asset, 8u32, 0u32));
+}
+
+#[test]
+fn test_valid_params_accepted() {
+    let e = Env::default();
+    e.mock_all_auths();
+
+    let admin = Address::generate(&e);
+    let asset = Asset::Other(Symbol::new(&e, "TEST"));
+    let assets = Vec::from_array(&e, [asset.clone()]);
+
+    // should succeed with valid parameters
+    let contract_id = e.register(RWAOracle, (admin, assets.clone(), asset.clone(), 8u32, 60u32));
+    let client = RWAOracleClient::new(&e, &contract_id);
+    assert_eq!(client.decimals(), 8);
+    assert_eq!(client.resolution(), 60);
+}
+
+
 // ==================== RWA Metadata Tests ====================
 
 #[test]
@@ -88,6 +178,9 @@ fn test_set_rwa_metadata() {
 
     let oracle = create_rwa_oracle_contract(&e);
     let asset_id = Symbol::new(&e, "RWA_BOND_2024");
+    
+    // Add asset to vector before setting metadata
+    oracle.add_assets(&Vec::from_array(&e, [Asset::Other(asset_id.clone())]));
 
     let metadata = create_test_metadata(&e, asset_id.clone());
     oracle.set_rwa_metadata(&asset_id, &metadata);
@@ -127,6 +220,7 @@ fn test_metadata_asset_types() {
 
     for (id, asset_type) in types {
         let asset_id = Symbol::new(&e, id);
+        oracle.add_assets(&Vec::from_array(&e, [Asset::Other(asset_id.clone())]));
         let mut metadata = create_test_metadata(&e, asset_id.clone());
         metadata.asset_type = asset_type.clone();
         oracle.set_rwa_metadata(&asset_id, &metadata);
@@ -154,6 +248,7 @@ fn test_metadata_valuation_methods() {
 
     for (id, method) in methods {
         let asset_id = Symbol::new(&e, id);
+        oracle.add_assets(&Vec::from_array(&e, [Asset::Other(asset_id.clone())]));
         let mut metadata = create_test_metadata(&e, asset_id.clone());
         metadata.valuation_method = method.clone();
         oracle.set_rwa_metadata(&asset_id, &metadata);
@@ -161,6 +256,68 @@ fn test_metadata_valuation_methods() {
         let retrieved = oracle.try_get_rwa_metadata(&asset_id).unwrap().unwrap();
         assert_eq!(retrieved.valuation_method, method);
     }
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #4)")]
+fn test_metadata_asset_id_mismatch_rejected() {
+    let e = Env::default();
+    e.mock_all_auths();
+
+    let oracle = create_rwa_oracle_contract(&e);
+    let key_id = Symbol::new(&e, "NVDA");
+    let wrong_id = Symbol::new(&e, "TSLA");
+
+    let metadata = create_test_metadata(&e, wrong_id.clone());
+    oracle.set_rwa_metadata(&key_id, &metadata);
+}
+
+#[test]
+fn test_metadata_asset_id_match_accepted() {
+    let e = Env::default();
+    e.mock_all_auths();
+
+    let oracle = create_rwa_oracle_contract(&e);
+    let asset_id = Symbol::new(&e, "NVDA");
+
+    let metadata = create_test_metadata(&e, asset_id.clone());
+    oracle.set_rwa_metadata(&asset_id, &metadata);
+    let retrieved = oracle.try_get_rwa_metadata(&asset_id).unwrap().unwrap();
+    assert_eq!(retrieved.asset_id, asset_id);
+}
+
+#[test]
+fn test_metadata_mismatch_no_state_change() {
+    let e = Env::default();
+    e.mock_all_auths();
+
+    let oracle = create_rwa_oracle_contract(&e);
+    let key_id = Symbol::new(&e, "NVDA");
+    let wrong_id = Symbol::new(&e, "TSLA");
+
+    let metadata = create_test_metadata(&e, wrong_id.clone());
+    let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        oracle.set_rwa_metadata(&key_id, &metadata);
+    }));
+
+    let result = oracle.try_get_rwa_metadata(&key_id);
+    assert!(result.is_err());
+    assert_eq!(result.unwrap_err().unwrap(), Error::AssetNotFound);
+}
+
+#[test]
+fn test_metadata_consistency_after_set() {
+    let e = Env::default();
+    e.mock_all_auths();
+
+    let oracle = create_rwa_oracle_contract(&e);
+    let asset_id = Symbol::new(&e, "NVDA");
+
+    let metadata = create_test_metadata(&e, asset_id.clone());
+    oracle.set_rwa_metadata(&asset_id, &metadata);
+
+    let retrieved = oracle.get_rwa_metadata(&asset_id);
+    assert_eq!(retrieved.asset_id, asset_id);
 }
 
 // ==================== Tokenization Info Tests ====================
@@ -172,6 +329,7 @@ fn test_update_tokenization_info() {
 
     let oracle = create_rwa_oracle_contract(&e);
     let asset_id = Symbol::new(&e, "RWA_BOND");
+    oracle.add_assets(&Vec::from_array(&e, [Asset::Other(asset_id.clone())]));
 
     let metadata = create_test_metadata(&e, asset_id.clone());
     oracle.set_rwa_metadata(&asset_id, &metadata);
@@ -229,6 +387,7 @@ fn test_get_all_rwa_assets() {
 
     let asset_id1 = Symbol::new(&e, "RWA_1");
     let asset_id2 = Symbol::new(&e, "RWA_2");
+    oracle.add_assets(&Vec::from_array(&e, [Asset::Other(asset_id1.clone()), Asset::Other(asset_id2.clone())]));
 
     let metadata1 = create_test_metadata(&e, asset_id1.clone());
     let mut metadata2 = create_test_metadata(&e, asset_id2.clone());
@@ -676,6 +835,95 @@ fn test_first_token_set_no_crash() {
     assert_eq!(result, asset_id);
 }
 
+// ==================== Pause / Unpause Tests ====================
+
+#[test]
+#[should_panic(expected = "Error(Contract, #9)")]
+fn test_pause_blocks_set_asset_price() {
+    let e = Env::default();
+    e.mock_all_auths();
+
+    let oracle = create_rwa_oracle_contract(&e);
+    let asset = Asset::Other(Symbol::new(&e, "NVDA"));
+
+    oracle.pause();
+
+    oracle.set_asset_price(&asset, &100, &1_000_000_000);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #9)")]
+fn test_pause_blocks_add_assets() {
+    let e = Env::default();
+    e.mock_all_auths();
+
+    let oracle = create_rwa_oracle_contract(&e);
+    let new_asset = Asset::Other(Symbol::new(&e, "AAPL"));
+
+    oracle.pause();
+
+    let assets_to_add = Vec::from_array(&e, [new_asset]);
+    oracle.add_assets(&assets_to_add);
+}
+
+#[test]
+fn test_unpause_allows_set_asset_price() {
+    let e = Env::default();
+    e.mock_all_auths();
+
+    let oracle = create_rwa_oracle_contract(&e);
+    let asset = Asset::Other(Symbol::new(&e, "NVDA"));
+
+    oracle.pause();
+    oracle.unpause();
+
+    oracle.set_asset_price(&asset, &100, &1_000_000_000);
+
+    let price = oracle.lastprice(&asset);
+    assert!(price.is_some());
+    assert_eq!(price.unwrap().price, 100);
+}
+
+#[test]
+fn test_pause_allows_read_operations() {
+    let e = Env::default();
+    e.mock_all_auths();
+
+    let oracle = create_rwa_oracle_contract(&e);
+    let asset = Asset::Other(Symbol::new(&e, "NVDA"));
+
+    oracle.set_asset_price(&asset, &100, &1_000_000_000);
+
+    oracle.pause();
+
+    let price = oracle.lastprice(&asset);
+    assert!(price.is_some());
+    assert_eq!(price.unwrap().price, 100);
+}
+
+#[test]
+#[should_panic]
+fn test_only_admin_can_pause() {
+    let e = Env::default();
+    // Do NOT mock all auths — non-admin call must fail
+    let oracle = create_rwa_oracle_contract(&e);
+    oracle.pause();
+}
+
+#[test]
+#[should_panic]
+fn test_only_admin_can_unpause() {
+    let e = Env::default();
+    e.mock_all_auths();
+    let oracle = create_rwa_oracle_contract(&e);
+    oracle.pause();
+
+    // Create a second env without mocked auths to simulate non-admin
+    let e2 = Env::default();
+    let oracle2 = RWAOracleClient::new(&e2, &oracle.address);
+    oracle2.unpause();
+}
+
 // ==================== TTL Extension Tests ====================
 
 #[test]
@@ -716,6 +964,7 @@ fn test_ttl_extended_on_metadata_update() {
 
     let oracle = create_rwa_oracle_contract(&e);
     let asset_id = Symbol::new(&e, "RWA_BOND");
+    oracle.add_assets(&Vec::from_array(&e, [Asset::Other(asset_id.clone())]));
 
     let metadata = create_test_metadata(&e, asset_id.clone());
     oracle.set_rwa_metadata(&asset_id, &metadata);
@@ -747,4 +996,213 @@ fn test_ttl_extended_on_add_assets() {
     oracle.add_assets(&assets_to_add);
 
     assert!(oracle.assets().contains(&new_asset));
+}
+
+// ==================== Asset Registration Enforcement Tests ====================
+
+#[test]
+#[should_panic(expected = "Error(Contract, #12)")]
+fn test_metadata_rejected_for_unregistered_asset() {
+    let e = Env::default();
+    e.mock_all_auths();
+
+    let oracle = create_rwa_oracle_contract(&e);
+    let unregistered_id = Symbol::new(&e, "NOT_REGISTERED");
+
+    let metadata = create_test_metadata(&e, unregistered_id.clone());
+
+    // This should panic - asset not in assets vector
+    oracle.set_rwa_metadata(&unregistered_id, &metadata);
+}
+
+#[test]
+fn test_metadata_accepted_for_registered_asset() {
+    let e = Env::default();
+    e.mock_all_auths();
+
+    let oracle = create_rwa_oracle_contract(&e);
+
+    // NVDA is registered in constructor
+    let asset_id = Symbol::new(&e, "NVDA");
+    let asset = Asset::Other(asset_id.clone());
+
+    let mut metadata = create_test_metadata(&e, asset_id.clone());
+    metadata.asset_type = RWAAssetType::Equity;
+
+    oracle.set_rwa_metadata(&asset_id, &metadata);
+
+    // Both should return the same asset type
+    let retrieved_metadata = oracle.get_rwa_metadata(&asset_id);
+    let retrieved_type = oracle.get_rwa_asset_type(&asset);
+
+    assert_eq!(retrieved_metadata.asset_type, RWAAssetType::Equity);
+    assert_eq!(retrieved_type, Some(RWAAssetType::Equity));
+}
+
+#[test]
+fn test_asset_type_always_synced_with_metadata() {
+    let e = Env::default();
+    e.mock_all_auths();
+
+    let oracle = create_rwa_oracle_contract(&e);
+
+    // NVDA is registered in constructor
+    let asset_id = Symbol::new(&e, "NVDA");
+    let asset = Asset::Other(asset_id.clone());
+
+    let mut metadata = create_test_metadata(&e, asset_id.clone());
+    metadata.asset_type = RWAAssetType::Equity;
+
+    oracle.set_rwa_metadata(&asset_id, &metadata);
+
+    // Both should return the same asset type
+    let retrieved_metadata = oracle.get_rwa_metadata(&asset_id);
+    let retrieved_type = oracle.get_rwa_asset_type(&asset);
+
+    assert_eq!(retrieved_metadata.asset_type, RWAAssetType::Equity);
+    assert_eq!(retrieved_type, Some(RWAAssetType::Equity));
+}
+
+#[test]
+fn test_metadata_accepted_after_add_assets() {
+    let e = Env::default();
+    e.mock_all_auths();
+
+    let oracle = create_rwa_oracle_contract(&e);
+    let asset_id = Symbol::new(&e, "NEW_BOND");
+    let asset = Asset::Other(asset_id.clone());
+
+    // Add asset via add_assets
+    oracle.add_assets(&Vec::from_array(&e, [asset.clone()]));
+
+    let metadata = create_test_metadata(&e, asset_id.clone());
+    oracle.set_rwa_metadata(&asset_id, &metadata);
+
+    let retrieved_metadata = oracle.get_rwa_metadata(&asset_id);
+    let retrieved_type = oracle.get_rwa_asset_type(&asset);
+
+    assert_eq!(retrieved_metadata.asset_id, asset_id);
+    assert_eq!(retrieved_type, Some(metadata.asset_type));
+}
+
+// ==================== Two-Step Admin Transfer Tests ====================
+
+#[test]
+fn test_propose_admin_sets_pending() {
+    let e = Env::default();
+    e.mock_all_auths();
+
+    let oracle = create_rwa_oracle_contract(&e);
+    let new_admin = Address::generate(&e);
+
+    oracle.propose_admin(&new_admin);
+
+    let pending = oracle.get_pending_admin();
+    assert!(pending.is_some());
+    assert_eq!(pending.unwrap(), new_admin);
+}
+
+#[test]
+fn test_accept_admin_transfers_ownership() {
+    let e = Env::default();
+    e.mock_all_auths();
+
+    let oracle = create_rwa_oracle_contract(&e);
+    let new_admin = Address::generate(&e);
+
+    oracle.propose_admin(&new_admin);
+    oracle.accept_admin();
+
+    let current_admin = oracle.admin();
+    assert_eq!(current_admin, new_admin);
+}
+
+#[test]
+fn test_pending_cleared_after_accept() {
+    let e = Env::default();
+    e.mock_all_auths();
+
+    let oracle = create_rwa_oracle_contract(&e);
+    let new_admin = Address::generate(&e);
+
+    oracle.propose_admin(&new_admin);
+    oracle.accept_admin();
+
+    let pending = oracle.get_pending_admin();
+    assert!(pending.is_none());
+}
+
+#[test]
+#[should_panic]
+fn test_only_admin_can_propose() {
+    let e = Env::default();
+
+    let admin = Address::generate(&e);
+    let non_admin = Address::generate(&e);
+    let oracle = create_rwa_oracle_contract_with_admin(&e, &admin);
+
+    // Only authorize non_admin, not the actual admin
+    e.mock_auths(&[soroban_sdk::testutils::MockAuth {
+        address: &non_admin,
+        invoke: &soroban_sdk::testutils::MockAuthInvoke {
+            contract: &oracle.address,
+            fn_name: "propose_admin",
+            args: soroban_sdk::vec![&e, non_admin.into_val(&e)],
+            sub_invokes: &[],
+        },
+    }]);
+
+    let new_admin = Address::generate(&e);
+    oracle.propose_admin(&new_admin);
+}
+
+#[test]
+#[should_panic]
+fn test_only_pending_can_accept() {
+    let e = Env::default();
+
+    let admin = Address::generate(&e);
+    let random = Address::generate(&e);
+    let oracle = create_rwa_oracle_contract_with_admin(&e, &admin);
+
+    // Propose a new admin using the real admin's auth
+    e.mock_auths(&[soroban_sdk::testutils::MockAuth {
+        address: &admin,
+        invoke: &soroban_sdk::testutils::MockAuthInvoke {
+            contract: &oracle.address,
+            fn_name: "propose_admin",
+            args: soroban_sdk::vec![&e, random.clone().into_val(&e)],
+            sub_invokes: &[],
+        },
+    }]);
+    oracle.propose_admin(&random);
+
+    // Try to accept with a different random address (not the pending admin)
+    let imposter = Address::generate(&e);
+    e.mock_auths(&[soroban_sdk::testutils::MockAuth {
+        address: &imposter,
+        invoke: &soroban_sdk::testutils::MockAuthInvoke {
+            contract: &oracle.address,
+            fn_name: "accept_admin",
+            args: soroban_sdk::vec![&e],
+            sub_invokes: &[],
+        },
+    }]);
+    oracle.accept_admin();
+}
+
+#[test]
+fn test_propose_again_replaces_pending() {
+    let e = Env::default();
+    e.mock_all_auths();
+
+    let oracle = create_rwa_oracle_contract(&e);
+    let admin_a = Address::generate(&e);
+    let admin_b = Address::generate(&e);
+
+    oracle.propose_admin(&admin_a);
+    assert_eq!(oracle.get_pending_admin().unwrap(), admin_a);
+
+    oracle.propose_admin(&admin_b);
+    assert_eq!(oracle.get_pending_admin().unwrap(), admin_b);
 }

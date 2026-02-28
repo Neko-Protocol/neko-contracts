@@ -7,7 +7,7 @@ use crate::common::error::Error;
 use crate::common::storage::RWAOracleStorage;
 use crate::common::types::{
     DataKey, MAX_PRICE_HISTORY, MAX_TIMESTAMP_DRIFT_SECONDS, PERSISTENT_BUMP_AMOUNT,
-    PERSISTENT_LIFETIME_THRESHOLD,
+    PERSISTENT_LIFETIME_THRESHOLD, MIN_DECIMALS, MAX_DECIMALS, MIN_RESOLUTION,
 };
 use crate::rwa::types::{RWAAssetType, RWAMetadata, TokenizationInfo};
 use crate::sep40::{IsSep40, IsSep40Admin};
@@ -30,6 +30,14 @@ impl RWAOracle {
         decimals: u32,
         resolution: u32,
     ) -> Result<(), Error> {
+        // Validate parameters before saving any state
+        if decimals < MIN_DECIMALS || decimals > MAX_DECIMALS {
+            panic_with_error!(env, Error::InvalidDecimals);
+        }
+        if resolution < MIN_RESOLUTION {
+            panic_with_error!(env, Error::InvalidResolution);
+        }
+
         Admin::set_admin(env, &admin);
         let oracle = RWAOracleStorage::new(env, assets.clone(), base, decimals, resolution);
         RWAOracleStorage::set(env, &oracle);
@@ -48,6 +56,41 @@ impl RWAOracle {
         Admin::upgrade(env, new_wasm_hash);
     }
 
+    /// Get the current admin address
+    pub fn admin(env: &Env) -> Address {
+        Admin::get_admin(env)
+    }
+
+    /// Get the pending admin address (if any)
+    pub fn get_pending_admin(env: &Env) -> Option<Address> {
+        Admin::get_pending_admin(env)
+    }
+
+    /// Propose a new admin (step 1 of two-step transfer)
+    pub fn propose_admin(env: &Env, new_admin: Address) {
+        Admin::propose_admin(env, &new_admin);
+    }
+
+    /// Accept admin role (step 2 of two-step transfer)
+    pub fn accept_admin(env: &Env) {
+        Admin::accept_admin(env);
+    }
+
+    /// Pause the contract, blocking all write operations (admin only)
+    pub fn pause(env: &Env) {
+        Admin::pause(env);
+    }
+
+    /// Unpause the contract, re-enabling write operations (admin only)
+    pub fn unpause(env: &Env) {
+        Admin::unpause(env);
+    }
+
+    /// Returns true if the contract is currently paused
+    pub fn is_paused(env: &Env) -> bool {
+        Admin::is_paused(env)
+    }
+
     // ==================== RWA Admin Functions ====================
 
     /// Register or update RWA metadata for an asset
@@ -57,18 +100,33 @@ impl RWAOracle {
         metadata: RWAMetadata,
     ) -> Result<(), Error> {
         Admin::require_admin(env);
+        if metadata.asset_id != asset_id {
+            panic_with_error!(env, Error::InvalidMetadata);
+        }
         let mut state = RWAOracleStorage::get(env);
+
+        // Verify asset is registered
+        let asset = Asset::Other(asset_id.clone());
+        let asset_exists = state.assets.iter().any(|a| match a {
+            Asset::Other(sym) => sym == asset_id,
+            Asset::Stellar(addr) => {
+                if let Asset::Stellar(check_addr) = &asset {
+                    addr == *check_addr
+                } else {
+                    false
+                }
+            }
+        });
+
+        if !asset_exists {
+            panic_with_error!(env, Error::AssetNotRegistered);
+        }
 
         // Set metadata
         state.rwa_metadata.set(asset_id.clone(), metadata.clone());
 
-        // Update asset type mapping if asset exists in price feed
-        if let Some(asset) = state.assets.iter().find(|a| match a {
-            Asset::Other(sym) => sym == &asset_id,
-            _ => false,
-        }) {
-            state.asset_types.set(asset.clone(), metadata.asset_type);
-        }
+        // Always update asset_types (no conditional needed - we verified above)
+        state.asset_types.set(asset, metadata.asset_type);
 
         RWAOracleStorage::set(env, &state);
         Admin::extend_instance_ttl(env);
@@ -245,6 +303,7 @@ impl RWAOracle {
 #[contractimpl]
 impl IsSep40Admin for RWAOracle {
     fn add_assets(env: &Env, assets: Vec<Asset>) {
+        Admin::require_not_paused(env);
         Admin::require_admin(env);
         let current_storage = RWAOracleStorage::get(env);
         let mut assets_vec = current_storage.assets;
@@ -271,6 +330,7 @@ impl IsSep40Admin for RWAOracle {
     }
 
     fn set_asset_price(env: &Env, asset_id: Asset, price: i128, timestamp: u64) {
+        Admin::require_not_paused(env);
         Admin::require_admin(env);
         RWAOracle::set_asset_price_internal(env, asset_id, price, timestamp);
     }

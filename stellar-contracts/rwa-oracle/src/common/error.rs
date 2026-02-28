@@ -10,6 +10,9 @@ pub enum Error {
     /// Asset already exists
     AssetAlreadyExists = 2,
 
+    /// Asset not registered in the oracle
+    AssetNotRegistered = 12,
+
     /// Invalid RWA type
     InvalidRWAType = 3,
 
@@ -27,4 +30,13 @@ pub enum Error {
 
     /// Timestamp is too old or not strictly increasing
     TimestampTooOld = 8,
+
+    /// Contract is paused
+    Paused = 9,
+
+    /// Invalid decimals parameter
+    InvalidDecimals = 10,
+
+    /// Invalid resolution parameter
+    InvalidResolution = 11,
 }
