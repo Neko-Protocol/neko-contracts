@@ -258,9 +258,12 @@ impl Interest {
             .checked_div(SCALAR_12)
             .ok_or(Error::ArithmeticError)?;
 
-        // Calculate backstop take from interest earned
+        // Calculate protocol takes from interest earned
         let backstop_take_rate = storage.backstop_take_rate as i128;
-        if backstop_take_rate > 0 && reserve.d_supply > 0 {
+        let reserve_factor = storage.reserve_factor as i128;
+        let total_protocol_rate = backstop_take_rate + reserve_factor;
+
+        if reserve.d_supply > 0 && total_protocol_rate > 0 {
             // Interest earned = d_supply * (new_d_rate - old_d_rate) / SCALAR_12
             let rate_increase = reserve
                 .d_rate
@@ -275,30 +278,34 @@ impl Interest {
                 .ok_or(Error::ArithmeticError)?;
 
             // Backstop credit = interest_earned * backstop_take_rate / SCALAR_7
-            let backstop_credit = interest_earned
-                .checked_mul(backstop_take_rate)
-                .ok_or(Error::ArithmeticError)?
-                .checked_div(SCALAR_7)
-                .ok_or(Error::ArithmeticError)?;
+            if backstop_take_rate > 0 {
+                let backstop_credit = interest_earned
+                    .checked_mul(backstop_take_rate)
+                    .ok_or(Error::ArithmeticError)?
+                    .checked_div(SCALAR_7)
+                    .ok_or(Error::ArithmeticError)?;
+                reserve.backstop_credit += backstop_credit;
+            }
 
-            reserve.backstop_credit += backstop_credit;
+            // Treasury credit (reserve factor) = interest_earned * reserve_factor / SCALAR_7
+            if reserve_factor > 0 {
+                let treasury_credit = interest_earned
+                    .checked_mul(reserve_factor)
+                    .ok_or(Error::ArithmeticError)?
+                    .checked_div(SCALAR_7)
+                    .ok_or(Error::ArithmeticError)?;
+                reserve.treasury_credit += treasury_credit;
+            }
         }
 
-        // Update b_rate based on new total supply value minus backstop
-        // b_rate increases as interest accrues to lenders
+        // Update b_rate: lenders receive interest minus total protocol take
         if reserve.b_supply > 0 {
-            // Total supply value = b_supply * b_rate / SCALAR_12
-            // After accrual, supply increases by (interest_earned - backstop_take)
-            // new_b_rate = (total_supply * accrual - backstop_credit_increase) * SCALAR_12 / b_supply
-
-            // Simplified: b_rate grows proportionally to accrual minus backstop take
-            let lender_accrual = if backstop_take_rate > 0 {
-                // lender_portion = accrual * (SCALAR_7 - backstop_take_rate) / SCALAR_7
+            let lender_accrual = if total_protocol_rate > 0 {
+                // lender_portion = SCALAR_7 - total_protocol_rate
                 let lender_portion = SCALAR_7
-                    .checked_sub(backstop_take_rate)
+                    .checked_sub(total_protocol_rate)
                     .ok_or(Error::ArithmeticError)?;
 
-                // Calculate the accrual increase portion
                 let accrual_increase = accrual
                     .checked_sub(SCALAR_12)
                     .ok_or(Error::ArithmeticError)?;

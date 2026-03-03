@@ -1,6 +1,7 @@
-use soroban_sdk::{Address, Env, Map, Symbol, Vec, panic_with_error};
+use soroban_sdk::{Address, Env, Map, Symbol, Vec, panic_with_error, token::TokenClient};
 
 use crate::common::error::Error;
+use crate::common::events::Events;
 use crate::common::storage::Storage;
 use crate::common::types::{AssetType, InterestRateParams, PoolState, SCALAR_7};
 
@@ -12,13 +13,28 @@ impl Admin {
     pub fn initialize(
         env: &Env,
         admin: &Address,
+        treasury: &Address,
         rwa_oracle: &Address,
         reflector_oracle: &Address,
         backstop_threshold: i128,
         backstop_take_rate: u32,
+        reserve_factor: u32,
+        origination_fee_rate: u32,
+        liquidation_fee_rate: u32,
     ) {
         if Storage::is_initialized(env) {
             panic_with_error!(env, Error::AlreadyInitialized);
+        }
+
+        // Validate fee rates: reserve_factor + backstop_take_rate <= SCALAR_7 (can't exceed 100%)
+        if (reserve_factor as i128 + backstop_take_rate as i128) > SCALAR_7 {
+            panic_with_error!(env, Error::InvalidInterestRateParams);
+        }
+        if origination_fee_rate as i128 > SCALAR_7 {
+            panic_with_error!(env, Error::InvalidInterestRateParams);
+        }
+        if liquidation_fee_rate as i128 > SCALAR_7 {
+            panic_with_error!(env, Error::InvalidInterestRateParams);
         }
 
         Storage::set_admin(env, admin);
@@ -49,6 +65,12 @@ impl Admin {
             backstop_take_rate,
             withdrawal_queue: Vec::new(env),
             backstop_token: None,
+
+            // Treasury & Fees
+            treasury: treasury.clone(),
+            reserve_factor,
+            origination_fee_rate,
+            liquidation_fee_rate,
 
             // Oracles
             rwa_oracle: rwa_oracle.clone(),
@@ -193,6 +215,85 @@ impl Admin {
         let mut storage = Storage::get(env);
         storage.backstop_token = Some(token_address.clone());
         Storage::set(env, &storage);
+    }
+
+    /// Set the treasury address
+    pub fn set_treasury(env: &Env, treasury: &Address) {
+        Self::require_admin(env);
+        let mut storage = Storage::get(env);
+        storage.treasury = treasury.clone();
+        Storage::set(env, &storage);
+    }
+
+    /// Get the treasury address
+    pub fn get_treasury(env: &Env) -> Address {
+        let storage = Storage::get(env);
+        storage.treasury
+    }
+
+    /// Set reserve factor (7 decimals). Must not exceed SCALAR_7 - backstop_take_rate.
+    pub fn set_reserve_factor(env: &Env, reserve_factor: u32) {
+        Self::require_admin(env);
+        let mut storage = Storage::get(env);
+        if (reserve_factor as i128 + storage.backstop_take_rate as i128) > SCALAR_7 {
+            panic_with_error!(env, Error::InvalidInterestRateParams);
+        }
+        storage.reserve_factor = reserve_factor;
+        Storage::set(env, &storage);
+    }
+
+    /// Set origination fee rate (7 decimals).
+    pub fn set_origination_fee_rate(env: &Env, origination_fee_rate: u32) {
+        Self::require_admin(env);
+        if origination_fee_rate as i128 > SCALAR_7 {
+            panic_with_error!(env, Error::InvalidInterestRateParams);
+        }
+        let mut storage = Storage::get(env);
+        storage.origination_fee_rate = origination_fee_rate;
+        Storage::set(env, &storage);
+    }
+
+    /// Set liquidation fee rate (7 decimals).
+    pub fn set_liquidation_fee_rate(env: &Env, liquidation_fee_rate: u32) {
+        Self::require_admin(env);
+        if liquidation_fee_rate as i128 > SCALAR_7 {
+            panic_with_error!(env, Error::InvalidInterestRateParams);
+        }
+        let mut storage = Storage::get(env);
+        storage.liquidation_fee_rate = liquidation_fee_rate;
+        Storage::set(env, &storage);
+    }
+
+    /// Collect accumulated treasury fees for an asset and transfer to treasury address.
+    /// Only admin can call this.
+    pub fn collect_treasury_fees(env: &Env, asset: &Symbol) -> Result<i128, Error> {
+        Self::require_admin(env);
+
+        let mut reserve = Storage::get_reserve_data(env, asset);
+        let amount = reserve.treasury_credit;
+        if amount == 0 {
+            return Err(Error::NoTreasuryFeesToCollect);
+        }
+
+        let storage = Storage::get(env);
+        let treasury = storage.treasury.clone();
+        let token_address =
+            Storage::get_token_contract(env, asset).ok_or(Error::TokenContractNotSet)?;
+
+        let token_client = TokenClient::new(env, &token_address);
+        token_client.transfer(&env.current_contract_address(), &treasury, &amount);
+
+        reserve.treasury_credit = 0;
+        Storage::set_reserve_data(env, asset, &reserve);
+
+        Events::treasury_fees_collected(env, asset, amount, &treasury);
+
+        Ok(amount)
+    }
+
+    /// Get accumulated treasury fees for an asset (not yet collected).
+    pub fn get_treasury_credit(env: &Env, asset: &Symbol) -> i128 {
+        Storage::get_reserve_data(env, asset).treasury_credit
     }
 
     /// Upgrade the contract to a new WASM hash

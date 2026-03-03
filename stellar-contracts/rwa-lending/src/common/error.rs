@@ -70,4 +70,8 @@ pub enum Error {
 
     // Token contract errors
     TokenContractNotSet = 84,
+
+    // Treasury errors
+    TreasuryNotSet = 85,
+    NoTreasuryFeesToCollect = 86,
 }

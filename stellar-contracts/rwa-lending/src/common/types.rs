@@ -59,6 +59,22 @@ pub const AUCTION_DURATION_BLOCKS: u32 = 200;
 pub const AUCTION_MAX_BLOCKS: u32 = 500;
 
 // ============================================================================
+// FEE CONSTANTS (7 decimals)
+// ============================================================================
+
+/// Reserve factor: 10% of interest goes to treasury
+#[allow(dead_code)]
+pub const DEFAULT_RESERVE_FACTOR: u32 = 1_000_000;
+
+/// Origination fee: 0.4% charged on borrow
+#[allow(dead_code)]
+pub const DEFAULT_ORIGINATION_FEE_RATE: u32 = 40_000;
+
+/// Liquidation fee: 1% of collateral received goes to treasury
+#[allow(dead_code)]
+pub const DEFAULT_LIQUIDATION_FEE_RATE: u32 = 100_000;
+
+// ============================================================================
 // BACKSTOP CONSTANTS
 // ============================================================================
 
@@ -172,6 +188,9 @@ pub struct ReserveData {
     /// Interest owed to backstop (accumulated)
     pub backstop_credit: i128,
 
+    /// Fees owed to treasury (accumulated: reserve factor + origination fees)
+    pub treasury_credit: i128,
+
     /// Last interest accrual timestamp
     pub last_time: u64,
 }
@@ -186,6 +205,7 @@ impl ReserveData {
             b_supply: 0,
             d_supply: 0,
             backstop_credit: 0,
+            treasury_credit: 0,
             last_time: timestamp,
         }
     }
