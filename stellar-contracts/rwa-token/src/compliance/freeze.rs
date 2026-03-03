@@ -11,7 +11,7 @@ impl AuthorizationStorage {
         env.storage()
             .persistent()
             .get(&DataKey::Authorized(id.clone()))
-            .unwrap_or_default()
+            .unwrap_or(true)
     }
 
     pub fn set(env: &Env, id: &Address, authorize: bool) {
