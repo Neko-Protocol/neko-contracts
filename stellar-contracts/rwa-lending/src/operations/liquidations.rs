@@ -218,13 +218,34 @@ impl Liquidations {
         let token_client = TokenClient::new(env, &debt_token_address);
         token_client.transfer(liquidator, env.current_contract_address(), &debt_to_pay);
 
-        // Transfer collateral from contract to liquidator
+        // Calculate liquidation fee (1% of collateral goes to treasury)
         let rwa_token_client = TokenClient::new(env, &rwa_token);
+        let liquidation_fee_rate = {
+            let s = Storage::get(env);
+            s.liquidation_fee_rate as i128
+        };
+        let liq_fee = collateral_received
+            .checked_mul(liquidation_fee_rate)
+            .ok_or(Error::ArithmeticError)?
+            .checked_div(SCALAR_7)
+            .ok_or(Error::ArithmeticError)?;
+        let collateral_for_liquidator = collateral_received
+            .checked_sub(liq_fee)
+            .ok_or(Error::ArithmeticError)?;
+
+        // Transfer collateral minus fee to liquidator
         rwa_token_client.transfer(
             &env.current_contract_address(),
             liquidator,
-            &collateral_received,
+            &collateral_for_liquidator,
         );
+
+        // Transfer liquidation fee directly to treasury
+        if liq_fee > 0 {
+            let treasury = Storage::get(env).treasury;
+            rwa_token_client.transfer(&env.current_contract_address(), &treasury, &liq_fee);
+            crate::common::events::Events::liquidation_fee(env, &rwa_token, liq_fee, &treasury);
+        }
 
         // Update CDP
         let borrower = &auction.user;

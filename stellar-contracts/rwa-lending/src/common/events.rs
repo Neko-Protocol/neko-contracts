@@ -105,6 +105,20 @@ pub struct InterestAuctionFilledEvent {
     pub backstop_paid: i128,
 }
 
+#[contractevent]
+pub struct TreasuryFeesCollectedEvent {
+    pub asset: Symbol,
+    pub amount: i128,
+    pub treasury: Address,
+}
+
+#[contractevent]
+pub struct LiquidationFeeEvent {
+    pub rwa_token: Address,
+    pub fee_amount: i128,
+    pub treasury: Address,
+}
+
 /// Helper struct for publishing events
 pub struct Events;
 
@@ -295,6 +309,34 @@ impl Events {
             auction_id,
             asset: asset.clone(),
             interest_amount,
+        }
+        .publish(env);
+    }
+
+    pub fn treasury_fees_collected(
+        env: &soroban_sdk::Env,
+        asset: &Symbol,
+        amount: i128,
+        treasury: &Address,
+    ) {
+        TreasuryFeesCollectedEvent {
+            asset: asset.clone(),
+            amount,
+            treasury: treasury.clone(),
+        }
+        .publish(env);
+    }
+
+    pub fn liquidation_fee(
+        env: &soroban_sdk::Env,
+        rwa_token: &Address,
+        fee_amount: i128,
+        treasury: &Address,
+    ) {
+        LiquidationFeeEvent {
+            rwa_token: rwa_token.clone(),
+            fee_amount,
+            treasury: treasury.clone(),
         }
         .publish(env);
     }

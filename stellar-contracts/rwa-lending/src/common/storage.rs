@@ -40,6 +40,12 @@ pub struct PoolStorage {
     pub withdrawal_queue: Vec<WithdrawalRequest>,
     pub backstop_token: Option<Address>, // Token contract for backstop deposits
 
+    // Treasury & Fees
+    pub treasury: Address,
+    pub reserve_factor: u32,        // 7 decimals, e.g., 1_000_000 = 10%
+    pub origination_fee_rate: u32,  // 7 decimals, e.g., 40_000 = 0.4%
+    pub liquidation_fee_rate: u32,  // 7 decimals, e.g., 100_000 = 1%
+
     // Oracles
     pub rwa_oracle: Address,
     pub reflector_oracle: Address,

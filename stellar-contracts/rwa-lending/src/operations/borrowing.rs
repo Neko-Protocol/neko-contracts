@@ -108,9 +108,32 @@ impl Borrowing {
         // Get current dTokenRate (12 decimals)
         let d_token_rate = Storage::get_d_token_rate(env, asset);
 
-        // Calculate dTokens with rounding up
-        // This favors the protocol by minting more dTokens
-        let d_tokens = types::rounding::to_d_token_up(amount, d_token_rate)?;
+        // Calculate origination fee
+        let origination_fee_rate = {
+            let s = Storage::get(env);
+            s.origination_fee_rate as i128
+        };
+        let origination_fee = amount
+            .checked_mul(origination_fee_rate)
+            .ok_or(Error::ArithmeticError)?
+            .checked_div(SCALAR_7)
+            .ok_or(Error::ArithmeticError)?;
+
+        // D-tokens are minted for amount + fee: borrower owes more than they receive
+        let borrow_plus_fee = amount
+            .checked_add(origination_fee)
+            .ok_or(Error::ArithmeticError)?;
+        let d_tokens = types::rounding::to_d_token_up(borrow_plus_fee, d_token_rate)?;
+
+        // Track origination fee as treasury credit (already in pool, earmarked for treasury)
+        if origination_fee > 0 {
+            let mut reserve = Storage::get_reserve_data(env, asset);
+            reserve.treasury_credit = reserve
+                .treasury_credit
+                .checked_add(origination_fee)
+                .ok_or(Error::ArithmeticError)?;
+            Storage::set_reserve_data(env, asset, &reserve);
+        }
 
         // Update CDP
         cdp.debt_asset = Some(asset.clone());
@@ -126,7 +149,7 @@ impl Borrowing {
         let current_supply = Storage::get_d_token_supply(env, asset);
         Storage::set_d_token_supply(env, asset, current_supply + d_tokens);
 
-        // Update pool balance
+        // Pool balance decreases only by `amount` (fee remains in pool as treasury credit)
         Storage::set_pool_balance(env, asset, pool_balance - amount);
 
         // Verify utilization is below 100% after borrow

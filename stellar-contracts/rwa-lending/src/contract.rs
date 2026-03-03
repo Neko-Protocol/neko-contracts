@@ -23,18 +23,26 @@ impl LendingContract {
     pub fn initialize(
         env: Env,
         admin: Address,
+        treasury: Address,
         rwa_oracle: Address,
         reflector_oracle: Address,
         backstop_threshold: i128,
         backstop_take_rate: u32,
+        reserve_factor: u32,
+        origination_fee_rate: u32,
+        liquidation_fee_rate: u32,
     ) {
         Admin::initialize(
             &env,
             &admin,
+            &treasury,
             &rwa_oracle,
             &reflector_oracle,
             backstop_threshold,
             backstop_take_rate,
+            reserve_factor,
+            origination_fee_rate,
+            liquidation_fee_rate,
         );
     }
 
@@ -87,6 +95,41 @@ impl LendingContract {
     /// Set backstop token contract address
     pub fn set_backstop_token(env: Env, token_address: Address) {
         Admin::set_backstop_token(&env, &token_address);
+    }
+
+    /// Set treasury address. Admin-only.
+    pub fn set_treasury(env: Env, treasury: Address) {
+        Admin::set_treasury(&env, &treasury);
+    }
+
+    /// Get treasury address
+    pub fn get_treasury(env: Env) -> Address {
+        Admin::get_treasury(&env)
+    }
+
+    /// Set reserve factor (7 decimals, e.g. 1_000_000 = 10%). Admin-only.
+    pub fn set_reserve_factor(env: Env, reserve_factor: u32) {
+        Admin::set_reserve_factor(&env, reserve_factor);
+    }
+
+    /// Set origination fee rate (7 decimals, e.g. 40_000 = 0.4%). Admin-only.
+    pub fn set_origination_fee_rate(env: Env, origination_fee_rate: u32) {
+        Admin::set_origination_fee_rate(&env, origination_fee_rate);
+    }
+
+    /// Set liquidation fee rate (7 decimals, e.g. 100_000 = 1%). Admin-only.
+    pub fn set_liquidation_fee_rate(env: Env, liquidation_fee_rate: u32) {
+        Admin::set_liquidation_fee_rate(&env, liquidation_fee_rate);
+    }
+
+    /// Collect accumulated treasury fees for an asset and transfer to treasury address. Admin-only.
+    pub fn collect_treasury_fees(env: Env, asset: Symbol) -> Result<i128, Error> {
+        Admin::collect_treasury_fees(&env, &asset)
+    }
+
+    /// Get accumulated treasury fees (not yet collected) for an asset.
+    pub fn get_treasury_credit(env: Env, asset: Symbol) -> i128 {
+        Admin::get_treasury_credit(&env, &asset)
     }
 
     /// Upgrade the contract to a new WASM hash
