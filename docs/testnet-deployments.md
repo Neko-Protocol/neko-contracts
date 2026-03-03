@@ -1,12 +1,5 @@
 # Testnet Deployments
 
-## Wallet
-
-| | |
-|--|--|
-| **Public Key** | `GDEQD7CITHS4AINJTA4VSACHOXK6ZOY6WTFUNLRHXTCLZXZ5TI4Y7Y5X` |
-| **Network** | Testnet |
-
 ---
 
 ## Oracle
