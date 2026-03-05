@@ -1,5 +1,6 @@
-use soroban_sdk::{Env, Map, Vec};
+use soroban_sdk::{panic_with_error, Env, Map, Vec};
 
+use crate::common::error::Error;
 use crate::rwa::types::{RWAAssetType, RWAMetadata};
 use crate::{Asset, Symbol, contracttype};
 
@@ -37,7 +38,15 @@ impl RWAOracleStorage {
     }
 
     pub fn get(env: &Env) -> Self {
-        env.storage().instance().get(&STORAGE).unwrap()
+        env.storage()
+            .instance()
+            .get(&STORAGE)
+            .unwrap_or_else(|| panic_with_error!(env, Error::StorageNotInitialized))
+    }
+
+    /// Try to get storage, returns None if not initialized
+    pub fn try_get(env: &Env) -> Option<Self> {
+        env.storage().instance().get(&STORAGE)
     }
 
     pub fn set(env: &Env, storage: &Self) {

@@ -33,3 +33,23 @@ pub struct PriceData {
 
 #[cfg(test)]
 mod test;
+
+/// Minimal test contract with no constructor - used to test StorageNotInitialized.
+/// Uses same storage layout as RWAOracle so RWAOracleStorage::get() can be exercised.
+#[cfg(test)]
+pub mod test_contract {
+    use soroban_sdk::{contract, contractimpl, Env, Vec};
+
+    use crate::common::storage::RWAOracleStorage;
+    use crate::Asset;
+
+    #[contract]
+    pub struct RWAOracleStorageTest;
+
+    #[contractimpl]
+    impl RWAOracleStorageTest {
+        pub fn get_assets(env: &Env) -> Vec<Asset> {
+            RWAOracleStorage::get(env).assets.clone()
+        }
+    }
+}
