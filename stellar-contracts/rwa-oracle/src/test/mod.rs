@@ -74,6 +74,37 @@ fn set_ledger_timestamp(e: &Env, timestamp: u64) {
     });
 }
 
+// ==================== Storage Error Handling Tests ====================
+
+use crate::test_contract::{RWAOracleStorageTest, RWAOracleStorageTestClient};
+
+#[test]
+#[should_panic(expected = "Error(Contract, #13)")]
+fn test_storage_not_initialized_error() {
+    let e = Env::default();
+    e.mock_all_auths();
+
+    // Register contract WITHOUT calling constructor (no storage init)
+    let contract_id = e.register(RWAOracleStorageTest, ());
+    let client = RWAOracleStorageTestClient::new(&e, &contract_id);
+
+    // This should panic with StorageNotInitialized
+    let _ = client.get_assets();
+}
+
+#[test]
+fn test_normal_get_after_init_works() {
+    let e = Env::default();
+    e.mock_all_auths();
+
+    let oracle = create_rwa_oracle_contract(&e);
+
+    let assets = oracle.assets();
+    assert_eq!(assets.len(), 2);
+    let base = oracle.base();
+    assert_eq!(base, Asset::Other(Symbol::new(&e, "TSLA")));
+}
+
 // ==================== Initialization Tests ====================
 
 #[test]
