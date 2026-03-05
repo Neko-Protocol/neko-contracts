@@ -242,7 +242,39 @@ impl RWAOracle {
         state.max_staleness
     }
 
+    /// Get the most recent price, but only if it's not stale
+    pub fn lastprice_if_fresh(env: &Env, asset: Asset) -> Option<PriceData> {
+        let price_data = <Self as IsSep40>::lastprice(env, asset.clone())?;
+
+        if Self::is_price_stale(env, &price_data) {
+            return None;
+        }
+
+        Some(price_data)
+    }
+
+    /// Check if the most recent price for an asset is fresh (not stale)
+    pub fn is_price_fresh(env: &Env, asset: Asset) -> bool {
+        if let Some(price_data) = <Self as IsSep40>::lastprice(env, asset) {
+            !Self::is_price_stale(env, &price_data)
+        } else {
+            false
+        }
+    }
+
     // ==================== Internal Helpers ====================
+
+    fn is_price_stale(env: &Env, price_data: &PriceData) -> bool {
+        let state = RWAOracleStorage::get(env);
+        let current_time = env.ledger().timestamp();
+
+        if current_time < price_data.timestamp {
+            return false;
+        }
+
+        let age = current_time - price_data.timestamp;
+        age > state.max_staleness
+    }
 
     fn get_asset_price(env: &Env, asset_id: Asset) -> Option<Map<u64, i128>> {
         env.storage().persistent().get(&DataKey::Prices(asset_id))

@@ -407,6 +407,127 @@ fn test_set_max_staleness() {
     assert_eq!(oracle.max_staleness(), 604_800);
 }
 
+// ==================== Staleness Check Helper Tests (M-04) ====================
+
+#[test]
+fn test_lastprice_if_fresh_returns_fresh_price() {
+    let e = Env::default();
+    e.mock_all_auths();
+
+    let oracle = create_rwa_oracle_contract(&e);
+    let asset = Asset::Other(Symbol::new(&e, "NVDA"));
+
+    set_ledger_timestamp(&e, 1000);
+    oracle.set_asset_price(&asset, &100, &1000);
+
+    // Within default max_staleness (24h), price should be fresh
+    set_ledger_timestamp(&e, 1000 + 3600);
+    let fresh_price = oracle.lastprice_if_fresh(&asset);
+    let price_data = fresh_price.unwrap();
+    assert_eq!(price_data.price, 100);
+    assert_eq!(price_data.timestamp, 1000);
+}
+
+#[test]
+fn test_lastprice_if_fresh_returns_none_when_stale() {
+    let e = Env::default();
+    e.mock_all_auths();
+
+    let oracle = create_rwa_oracle_contract(&e);
+    let asset = Asset::Other(Symbol::new(&e, "NVDA"));
+
+    set_ledger_timestamp(&e, 1000);
+    oracle.set_asset_price(&asset, &100, &1000);
+
+    // Move time forward past default max_staleness (86400 seconds = 24 hours)
+    set_ledger_timestamp(&e, 1000 + 86_400 + 1);
+
+    let fresh_price = oracle.lastprice_if_fresh(&asset);
+    assert!(fresh_price.is_none());
+
+    // But lastprice should still work
+    let regular_price = oracle.lastprice(&asset);
+    assert!(regular_price.is_some());
+    assert_eq!(regular_price.unwrap().price, 100);
+}
+
+#[test]
+fn test_is_price_fresh_returns_true() {
+    let e = Env::default();
+    e.mock_all_auths();
+
+    let oracle = create_rwa_oracle_contract(&e);
+    let asset = Asset::Other(Symbol::new(&e, "NVDA"));
+
+    set_ledger_timestamp(&e, 1000);
+    oracle.set_asset_price(&asset, &100, &1000);
+
+    set_ledger_timestamp(&e, 1000 + 3600);
+    assert!(oracle.is_price_fresh(&asset));
+}
+
+#[test]
+fn test_is_price_fresh_returns_false_when_stale() {
+    let e = Env::default();
+    e.mock_all_auths();
+
+    let oracle = create_rwa_oracle_contract(&e);
+    let asset = Asset::Other(Symbol::new(&e, "NVDA"));
+
+    set_ledger_timestamp(&e, 1000);
+    oracle.set_asset_price(&asset, &100, &1000);
+
+    set_ledger_timestamp(&e, 1000 + 86_400 + 1);
+    assert!(!oracle.is_price_fresh(&asset));
+}
+
+#[test]
+fn test_staleness_respects_custom_max() {
+    let e = Env::default();
+    e.mock_all_auths();
+
+    let oracle = create_rwa_oracle_contract(&e);
+    let asset = Asset::Other(Symbol::new(&e, "NVDA"));
+
+    oracle.set_max_staleness(&3600);
+
+    set_ledger_timestamp(&e, 1000);
+    oracle.set_asset_price(&asset, &100, &1000);
+
+    // Move time forward 30 minutes (still fresh)
+    set_ledger_timestamp(&e, 1000 + 1800);
+    assert!(oracle.is_price_fresh(&asset));
+    assert!(oracle.lastprice_if_fresh(&asset).is_some());
+
+    // Move time forward past 1 hour (stale)
+    set_ledger_timestamp(&e, 1000 + 3601);
+    assert!(!oracle.is_price_fresh(&asset));
+    assert!(oracle.lastprice_if_fresh(&asset).is_none());
+}
+
+#[test]
+fn test_original_lastprice_ignores_staleness() {
+    let e = Env::default();
+    e.mock_all_auths();
+
+    let oracle = create_rwa_oracle_contract(&e);
+    let asset = Asset::Other(Symbol::new(&e, "NVDA"));
+
+    set_ledger_timestamp(&e, 1000);
+    oracle.set_asset_price(&asset, &100, &1000);
+
+    // Move time forward past max_staleness (stale)
+    set_ledger_timestamp(&e, 1000 + 86_400 + 1);
+
+    // lastprice() should still return the price (ignores staleness)
+    let regular_price = oracle.lastprice(&asset).unwrap();
+    assert_eq!(regular_price.price, 100);
+    assert_eq!(regular_price.timestamp, 1000);
+
+    // lastprice_if_fresh should return None
+    assert!(oracle.lastprice_if_fresh(&asset).is_none());
+}
+
 // ==================== Asset Listing Tests ====================
 
 #[test]
