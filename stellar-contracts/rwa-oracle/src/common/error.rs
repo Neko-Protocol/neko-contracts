@@ -13,6 +13,9 @@ pub enum Error {
     /// Asset not registered in the oracle
     AssetNotRegistered = 12,
 
+    /// Storage not initialized (constructor not called)
+    StorageNotInitialized = 13,
+
     /// Invalid RWA type
     InvalidRWAType = 3,
 
