@@ -53,9 +53,9 @@ impl Admin {
         admin.require_auth();
     }
 
-    /// Mint tokens to an address
+    /// Mint tokens to an address. The recipient must authorize the mint.
     pub fn mint(env: &Env, to: &Address, amount: i128) {
-        Self::require_admin(env);
+        to.require_auth();
         assert_with_error!(env, amount > 0, Error::ValueNotPositive);
 
         BalanceStorage::add(env, to, amount);
