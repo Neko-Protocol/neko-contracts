@@ -83,6 +83,11 @@ fn test_token_initialization() {
     let retrieved_admin = token.admin();
     assert_eq!(retrieved_admin, admin);
 
+    // Test set_admin: transfer admin to new address
+    let new_admin = Address::generate(&e);
+    token.set_admin(&new_admin);
+    assert_eq!(token.admin(), new_admin);
+
     // Total supply starts at zero
     assert_eq!(token.total_supply(), 0);
 

@@ -43,6 +43,14 @@
 
 ---
 
+## RWA Faucet
+
+| | Address |
+|--|---------|
+| **rwa-faucet** | `CDLSGZRPB6DMLYT6Y52QRRCTSFJQAP6GBZBXJ76DJ3TOBYOU7LSQGGUF` |
+
+---
+
 ## Crypto Assets
 
 | Asset | Address |
@@ -51,11 +59,3 @@
 | **XLM** | `CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC` |
 
 ---
-
-## Admin
-
-| | |
-|--|--|
-| **Pubkey** | `GDEQD7CITHS4AINJTA4VSACHOXK6ZOY6WTFUNLRHXTCLZXZ5TI4Y7Y5X` |
-| **Identity** | `neko-deploy` (`~/.config/stellar/identity/neko-deploy.toml`) |
-| **Deployed** | 2026-03-08 |

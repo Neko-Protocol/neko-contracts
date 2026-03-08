@@ -1,4 +1,4 @@
-use soroban_sdk::{contract, contractimpl, vec, Address, Env, IntoVal, Symbol, Vec};
+use soroban_sdk::{contract, contractimpl, vec, Address, BytesN, Env, IntoVal, Symbol, Vec};
 
 use crate::storage::Storage;
 use crate::types::MintRequest;
@@ -40,6 +40,12 @@ impl Faucet {
     /// Return the admin address.
     pub fn admin(env: Env) -> Address {
         Storage::get_admin(&env)
+    }
+
+    /// Upgrade the contract to new WASM. Admin-only.
+    pub fn upgrade(env: Env, new_wasm_hash: BytesN<32>) {
+        Storage::get_admin(&env).require_auth();
+        env.deployer().update_current_contract_wasm(new_wasm_hash);
     }
 
     /// Transfer admin of each token to a new address.

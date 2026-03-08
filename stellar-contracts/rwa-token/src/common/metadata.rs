@@ -18,6 +18,11 @@ impl MetadataStorage {
         env.storage().instance().set(&ADMIN_KEY, admin);
     }
 
+    /// Update admin to a new address. Caller must have verified admin auth.
+    pub fn update_admin(env: &Env, new_admin: &Address) {
+        env.storage().instance().set(&ADMIN_KEY, new_admin);
+    }
+
     pub fn get_token(env: &Env) -> TokenStorage {
         env.storage()
             .instance()

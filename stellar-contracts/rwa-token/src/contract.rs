@@ -60,6 +60,11 @@ impl RWATokenContract {
         Admin::get_admin(&env)
     }
 
+    /// Transfer admin to a new address. Admin-only.
+    pub fn set_admin(env: Env, new_admin: Address) {
+        Admin::set_admin(&env, &new_admin);
+    }
+
     /// Mint tokens to an address. The recipient must authorize the mint.
     pub fn mint(env: Env, to: Address, amount: i128) {
         Admin::mint(&env, &to, amount);
