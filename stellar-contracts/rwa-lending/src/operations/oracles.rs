@@ -33,9 +33,9 @@ impl Oracles {
             return Err(Error::InvalidOraclePrice);
         }
 
-        // Check if price is too old (more than 24 hours)
+        // Check if price is too old (more than 7 days)
         let current_time = env.ledger().timestamp();
-        if oracle_price_data.timestamp + 24 * 60 * 60 < current_time {
+        if oracle_price_data.timestamp + 7 * 24 * 60 * 60 < current_time {
             return Err(Error::InvalidOraclePrice);
         }
 
@@ -72,9 +72,9 @@ impl Oracles {
             return Err(Error::InvalidOraclePrice);
         }
 
-        // Check if price is too old (more than 24 hours)
+        // Check if price is too old (more than 7 days)
         let current_time = env.ledger().timestamp();
-        if oracle_price_data.timestamp + 24 * 60 * 60 < current_time {
+        if oracle_price_data.timestamp + 7 * 24 * 60 * 60 < current_time {
             return Err(Error::InvalidOraclePrice);
         }
 
