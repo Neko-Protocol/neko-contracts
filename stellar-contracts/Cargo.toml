@@ -5,6 +5,7 @@ members = [
   "rwa-oracle",
   "rwa-token",
   "rwa-vault",
+  "rwa-faucet",
   "adapters/adapter-rwa-lending",
   "adapters/adapter-blend",
   "adapters/adapter-soroswap"

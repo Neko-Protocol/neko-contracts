@@ -66,6 +66,7 @@ The contracts form a composable stack. Data and value flow from oracle → token
 | [adapter-rwa-lending](./adapter-rwa-lending) | IAdapter bridge: vault ↔ rwa-lending | IAdapter | 5 |
 | [adapter-blend](./adapter-blend) | IAdapter bridge: vault ↔ Blend Protocol (BLND harvest) | IAdapter | 5 |
 | [adapter-soroswap](./adapter-soroswap) | IAdapter bridge: vault ↔ Soroswap AMM (single-asset LP) | IAdapter | 6 |
+| [rwa-faucet](./rwa-faucet) | Bulk mint for RWA tokens (testnet/dev) | — | 4 |
 
 ---
 
@@ -141,6 +142,16 @@ See [adapter-soroswap/README.md](./adapter-soroswap/README.md) for detailed docu
 
 ---
 
+### rwa-faucet
+
+Bulk mint contract for RWA tokens. Mints multiple tokens to multiple recipients in a single invocation — useful for testnet airdrops and dev environments. The faucet must be the admin of each rwa-token it mints; deploy the faucet first, then deploy tokens with `admin = faucet address`.
+
+**Key features:** Bulk mint in one call · Compatible with rwa-token and Stellar Asset Contract · `transfer_token_admins` for handing off token admin
+
+See [rwa-faucet/README.md](./rwa-faucet/README.md) for integration details.
+
+---
+
 ## Contract Dependencies
 
 | Contract | WASM imports |
@@ -152,6 +163,7 @@ See [adapter-soroswap/README.md](./adapter-soroswap/README.md) for detailed docu
 | `adapter-rwa-lending` | `rwa-lending` WASM (`contractimport!`) |
 | `adapter-blend` | `external_wasms/blend/pool.wasm` (`contractimport!`) |
 | `adapter-soroswap` | `external_wasms/soroswap/router.wasm` + `pair.wasm` (`contractimport!`) |
+| `rwa-faucet` | — |
 
 Contracts that import WASMs must be built after their dependencies. The external Blend and Soroswap WASMs must be present in `external_wasms/` before building the corresponding adapters.
 
