@@ -4,7 +4,7 @@ use crate::admin::Admin;
 use crate::common::error::Error;
 use crate::common::events::Events;
 use crate::common::storage::Storage;
-use crate::common::types::{self, MIN_HEALTH_FACTOR, PoolState, SCALAR_7, SCALAR_12};
+use crate::common::types::{self, PoolState, SCALAR_7, SCALAR_12};
 use crate::operations::collateral::Collateral;
 use crate::operations::interest::Interest;
 use crate::operations::oracles::Oracles;
@@ -54,11 +54,8 @@ impl Borrowing {
         // Calculate borrow limit
         let borrow_limit = Self::calculate_borrow_limit(env, borrower)?;
 
-        // Get asset decimals from token contract
-        let token_address =
-            Storage::get_token_contract(env, asset).ok_or(Error::TokenContractNotSet)?;
-        let token_client = TokenClient::new(env, &token_address);
-        let asset_decimals = token_client.decimals();
+        // Fetch asset price once — reused for both current debt and new debt calculations
+        let (asset_price, price_decimals) = Oracles::get_price_for_lending_asset(env, asset)?;
 
         // Get current debt value
         let current_debt_value = if cdp.d_tokens > 0 {
@@ -70,26 +67,15 @@ impl Borrowing {
                 .checked_div(SCALAR_12)
                 .ok_or(Error::ArithmeticError)?;
 
-            // Route to correct oracle based on asset type
-            let (debt_price, debt_price_decimals) =
-                Oracles::get_price_for_lending_asset(env, asset)?;
-
-            // Calculate debt value in USD
-            Oracles::calculate_usd_value(
-                env,
-                debt_amount,
-                debt_price,
-                asset_decimals,
-                debt_price_decimals,
-            )?
+            // Calculate debt value in USD (_asset_decimals unused in calculate_usd_value)
+            Oracles::calculate_usd_value(env, debt_amount, asset_price, 0, price_decimals)?
         } else {
             0
         };
 
-        // Calculate new debt value — route to correct oracle based on asset type
-        let (asset_price, price_decimals) = Oracles::get_price_for_lending_asset(env, asset)?;
+        // Calculate new debt value
         let new_debt_value =
-            Oracles::calculate_usd_value(env, amount, asset_price, asset_decimals, price_decimals)?;
+            Oracles::calculate_usd_value(env, amount, asset_price, 0, price_decimals)?;
 
         let total_debt_value = current_debt_value
             .checked_add(new_debt_value)
@@ -157,14 +143,6 @@ impl Borrowing {
         let utilization = Interest::calculate_utilization(env, asset)?;
         if utilization >= SCALAR_7 {
             return Err(Error::InvalidUtilRate);
-        }
-
-        // Verify health factor remains above minimum threshold (7 decimals)
-        // This ensures the borrower maintains a safety margin above liquidation threshold
-        let health_factor =
-            crate::operations::liquidations::Liquidations::calculate_health_factor(env, borrower)?;
-        if (health_factor as i128) < MIN_HEALTH_FACTOR {
-            return Err(Error::HealthFactorTooLow);
         }
 
         // Transfer asset from pool to borrower
@@ -264,6 +242,10 @@ impl Borrowing {
 
         let mut total_collateral_value = 0i128;
 
+        // Fetch oracle decimals once before the loop to avoid one cross-contract call per collateral item
+        let rwa_oracle_decimals = Oracles::get_rwa_oracle_decimals(env);
+        let reflector_oracle_decimals = Oracles::get_reflector_oracle_decimals(env);
+
         // Iterate through all collateral
         let keys = all_collateral.keys();
         for rwa_token in keys {
@@ -272,18 +254,20 @@ impl Borrowing {
                 continue;
             }
 
-            // Route to correct oracle based on collateral asset type
-            let (rwa_price, price_decimals) = Oracles::get_price_for_collateral(env, &rwa_token)?;
-            // Get token decimals from RWA token contract
-            let rwa_token_client = TokenClient::new(env, &rwa_token);
-            let rwa_decimals = rwa_token_client.decimals();
+            // Route to correct oracle, reusing pre-fetched decimals
+            let (rwa_price, price_decimals) = Oracles::get_price_for_collateral_cached(
+                env,
+                &rwa_token,
+                rwa_oracle_decimals,
+                reflector_oracle_decimals,
+            )?;
 
-            // Calculate collateral value in USD
+            // Calculate collateral value in USD (_asset_decimals unused in calculate_usd_value)
             let collateral_value = Oracles::calculate_usd_value(
                 env,
                 collateral_amount,
                 rwa_price,
-                rwa_decimals,
+                0,
                 price_decimals,
             )?;
 
@@ -318,18 +302,13 @@ impl Borrowing {
                     // Route to correct oracle based on debt asset type
                     let (debt_price, price_decimals) =
                         Oracles::get_price_for_lending_asset(env, debt_asset)?;
-                    // Get asset decimals from token contract
-                    let token_address = Storage::get_token_contract(env, debt_asset)
-                        .ok_or(Error::TokenContractNotSet)?;
-                    let token_client = TokenClient::new(env, &token_address);
-                    let asset_decimals = token_client.decimals();
 
-                    // Calculate debt value in USD
+                    // Calculate debt value in USD (_asset_decimals unused in calculate_usd_value)
                     Oracles::calculate_usd_value(
                         env,
                         debt_amount,
                         debt_price,
-                        asset_decimals,
+                        0,
                         price_decimals,
                     )?
                 } else {

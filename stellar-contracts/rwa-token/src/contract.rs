@@ -45,6 +45,16 @@ impl RWATokenContract {
         Admin::upgrade(&env, new_wasm_hash);
     }
 
+    /// Upgrade a child contract whose admin is this contract. Admin-only.
+    pub fn upgrade_child(env: Env, child_id: Address, new_wasm_hash: BytesN<32>) {
+        Admin::require_admin(&env);
+        env.invoke_contract::<()>(
+            &child_id,
+            &soroban_sdk::Symbol::new(&env, "upgrade"),
+            soroban_sdk::vec![&env, new_wasm_hash.into()],
+        );
+    }
+
     /// Get the admin address
     pub fn admin(env: Env) -> Address {
         Admin::get_admin(&env)
