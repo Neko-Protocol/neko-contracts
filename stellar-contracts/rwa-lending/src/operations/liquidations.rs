@@ -324,6 +324,10 @@ impl Liquidations {
         let all_collateral = Collateral::get_all_collateral(env, borrower);
         let mut total_collateral_value = 0i128;
 
+        // Fetch oracle decimals once before the loop to avoid per-item cross-contract calls
+        let rwa_oracle_decimals = Oracles::get_rwa_oracle_decimals(env);
+        let reflector_oracle_decimals = Oracles::get_reflector_oracle_decimals(env);
+
         let keys = all_collateral.keys();
         for rwa_token in keys {
             let collateral_amount = all_collateral.get(rwa_token.clone()).unwrap_or(0);
@@ -331,16 +335,20 @@ impl Liquidations {
                 continue;
             }
 
-            // Route to correct oracle based on collateral asset type
-            let (rwa_price, rwa_decimals) = Oracles::get_price_for_collateral(env, &rwa_token)?;
-            let price_decimals = 7;
+            // Route to correct oracle, reusing pre-fetched decimals
+            let (rwa_price, price_decimals) = Oracles::get_price_for_collateral_cached(
+                env,
+                &rwa_token,
+                rwa_oracle_decimals,
+                reflector_oracle_decimals,
+            )?;
 
-            // Calculate collateral value in USD
+            // Calculate collateral value in USD (_asset_decimals unused in calculate_usd_value)
             let collateral_value = Oracles::calculate_usd_value(
                 env,
                 collateral_amount,
                 rwa_price,
-                rwa_decimals,
+                0,
                 price_decimals,
             )?;
 
@@ -371,17 +379,16 @@ impl Liquidations {
                     .ok_or(Error::ArithmeticError)?;
 
                 // Route to correct oracle based on debt asset type
-                let (debt_price, debt_decimals) =
+                let (debt_price, debt_price_decimals) =
                     Oracles::get_price_for_lending_asset(env, debt_asset)?;
-                let price_decimals = 7;
 
-                // Calculate debt value in USD
+                // Calculate debt value in USD (_asset_decimals unused in calculate_usd_value)
                 Oracles::calculate_usd_value(
                     env,
                     debt_amount,
                     debt_price,
-                    debt_decimals,
-                    price_decimals,
+                    0,
+                    debt_price_decimals,
                 )?
             } else {
                 0

@@ -142,6 +142,41 @@ impl Oracles {
         }
     }
 
+    /// Get RWA oracle decimals once — call before loops to avoid one cross-contract call per iteration
+    pub fn get_rwa_oracle_decimals(env: &Env) -> u32 {
+        let storage = Storage::get(env);
+        rwa_oracle::Client::new(env, &storage.rwa_oracle).decimals()
+    }
+
+    /// Get Reflector oracle decimals once — call before loops to avoid one cross-contract call per iteration
+    pub fn get_reflector_oracle_decimals(env: &Env) -> u32 {
+        let storage = Storage::get(env);
+        rwa_oracle::Client::new(env, &storage.reflector_oracle).decimals()
+    }
+
+    /// Like get_price_for_collateral but accepts pre-fetched oracle decimals.
+    /// Use in loops paired with get_rwa_oracle_decimals/get_reflector_oracle_decimals
+    /// to avoid one oracle.decimals() cross-contract call per collateral item.
+    pub fn get_price_for_collateral_cached(
+        env: &Env,
+        token: &Address,
+        rwa_oracle_decimals: u32,
+        reflector_oracle_decimals: u32,
+    ) -> Result<(i128, u32), Error> {
+        match Storage::get_collateral_asset_type(env, token) {
+            AssetType::Rwa => {
+                let price_data = Self::get_rwa_price(env, token)?;
+                Ok((price_data.price, rwa_oracle_decimals))
+            }
+            AssetType::Crypto => {
+                let symbol = Storage::get_collateral_symbol(env, token)
+                    .ok_or(Error::TokenContractNotSet)?;
+                let price_data = Self::get_crypto_price(env, &symbol)?;
+                Ok((price_data.price, reflector_oracle_decimals))
+            }
+        }
+    }
+
     /// Calculate USD value of an amount
     /// Formula: value = (amount * price) / 10^(price_decimals)
     /// The price is already in the oracle's scale (price_decimals), so we just multiply and divide
