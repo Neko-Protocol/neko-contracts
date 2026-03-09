@@ -18,17 +18,10 @@ impl Faucet {
     }
 
     /// Mint multiple tokens in a single invocation.
-    /// The faucet contract must be the admin of each token contract. The caller must
-    /// authorize the faucet (e.g. faucet admin signs for the faucet) so that
-    /// cross-contract calls to set_authorized and mint succeed.
+    /// The recipient (to) must authorize in the root context so sub-calls to token.mint pass auth.
     pub fn bulk_mint(env: Env, requests: Vec<MintRequest>) {
-        env.current_contract_address().require_auth();
         for req in requests.iter() {
-            env.invoke_contract::<()>(
-                &req.token,
-                &Symbol::new(&env, "set_authorized"),
-                vec![&env, req.to.into_val(&env), true.into_val(&env)],
-            );
+            req.to.require_auth();
             env.invoke_contract::<()>(
                 &req.token,
                 &Symbol::new(&env, "mint"),
@@ -52,6 +45,7 @@ impl Faucet {
     /// Only the current admin (faucet) can invoke set_admin on tokens. This function
     /// invokes set_admin on each token so the faucet can hand off admin to another address.
     pub fn transfer_token_admins(env: Env, tokens: Vec<Address>, new_admin: Address) {
+        Storage::get_admin(&env).require_auth();
         for token in tokens.iter() {
             env.invoke_contract::<()>(
                 &token,
