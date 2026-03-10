@@ -83,13 +83,12 @@ impl Liquidations {
 
         // Get total collateral value — route to correct oracle based on collateral asset type
         let (rwa_price, rwa_decimals) = Oracles::get_price_for_collateral(env, rwa_token)?;
-        let price_decimals = 7;
         let total_collateral_value = Oracles::calculate_usd_value(
             env,
             collateral_amount,
             rwa_price,
             rwa_decimals,
-            price_decimals,
+            rwa_decimals,
         )?;
 
         // Get total debt value — route to correct oracle based on debt asset type
@@ -99,7 +98,7 @@ impl Liquidations {
             debt_amount,
             debt_price,
             debt_decimals,
-            price_decimals,
+            debt_decimals,
         )?;
 
         // Calculate collateral percentage: C_p = (p * L_p * L_o) / C_o
