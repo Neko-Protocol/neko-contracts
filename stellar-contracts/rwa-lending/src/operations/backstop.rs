@@ -48,7 +48,6 @@ impl Backstop {
     }
 
     /// Initiate withdrawal from backstop (enters queue)
-    #[allow(dead_code)]
     pub fn initiate_withdrawal(env: &Env, depositor: &Address, amount: i128) -> Result<(), Error> {
         depositor.require_auth();
 
@@ -173,7 +172,6 @@ impl Backstop {
     }
 
     /// Get backstop deposit for a depositor
-    #[allow(dead_code)]
     pub fn get_deposit(env: &Env, depositor: &Address) -> crate::common::types::BackstopDeposit {
         let storage = Storage::get(env);
         storage.backstop_deposits.get(depositor.clone()).unwrap_or(
@@ -187,7 +185,6 @@ impl Backstop {
     }
 
     /// Get total backstop deposits
-    #[allow(dead_code)]
     pub fn get_total(env: &Env) -> i128 {
         let storage = Storage::get(env);
         storage.backstop_total

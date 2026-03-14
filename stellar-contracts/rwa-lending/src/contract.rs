@@ -3,7 +3,7 @@ use soroban_sdk::{Address, Env, Symbol, contract, contractimpl};
 use crate::admin::Admin;
 use crate::common::error::Error;
 use crate::common::storage::Storage;
-use crate::common::types::{AssetType, InterestRateParams, PoolState};
+use crate::common::types::{AssetType, BackstopDeposit, InterestRateParams, PoolState};
 use crate::operations::backstop::Backstop;
 use crate::operations::bad_debt::BadDebt;
 use crate::operations::borrowing::Borrowing;
@@ -272,9 +272,25 @@ impl LendingContract {
         Backstop::deposit(&env, &depositor, amount)
     }
 
-    /// Withdraw from backstop
+    /// Initiate withdrawal from backstop — enters the 17-day queue
+    pub fn initiate_withdrawal(env: Env, depositor: Address, amount: i128) -> Result<(), Error> {
+        Backstop::initiate_withdrawal(&env, &depositor, amount)
+    }
+
+    /// Withdraw from backstop (requires queue period to have elapsed)
     pub fn withdraw_from_backstop(env: Env, depositor: Address, amount: i128) -> Result<(), Error> {
         Backstop::withdraw(&env, &depositor, amount)
+    }
+
+    /// Get backstop token contract address
+    pub fn get_backstop_token(env: Env) -> Option<Address> {
+        let storage = Storage::get(&env);
+        storage.backstop_token
+    }
+
+    /// Get backstop deposit info for a depositor
+    pub fn get_backstop_deposit(env: Env, depositor: Address) -> BackstopDeposit {
+        Backstop::get_deposit(&env, &depositor)
     }
 
     // ========== Bad Debt Auction Functions ==========
