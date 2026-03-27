@@ -351,6 +351,29 @@ fn test_metadata_consistency_after_set() {
     assert_eq!(retrieved.asset_id, asset_id);
 }
 
+#[test]
+fn test_set_rwa_metadata_registered_asset_succeeds() {
+    let e = Env::default();
+    e.mock_all_auths();
+    let oracle = create_rwa_oracle_contract(&e);
+    let asset_id = Symbol::new(&e, "NVDA");
+    let metadata = create_test_metadata(&e, asset_id.clone());
+    oracle.set_rwa_metadata(&asset_id, &metadata);
+    let stored = oracle.get_rwa_metadata(&asset_id);
+    assert_eq!(stored.name, metadata.name);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #12)")]
+fn test_set_rwa_metadata_unregistered_asset_panics() {
+    let e = Env::default();
+    e.mock_all_auths();
+    let oracle = create_rwa_oracle_contract(&e);
+    let asset_id = Symbol::new(&e, "UNREGISTERED");
+    let metadata = create_test_metadata(&e, asset_id.clone());
+    oracle.set_rwa_metadata(&asset_id, &metadata);
+}
+
 // ==================== Tokenization Info Tests ====================
 
 #[test]
