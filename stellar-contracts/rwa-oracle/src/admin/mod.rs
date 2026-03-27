@@ -37,6 +37,7 @@ impl Admin {
 
     /// Set the maximum acceptable age (in seconds) for price data
     pub fn set_max_staleness(env: &Env, max_seconds: u64) {
+        Self::require_not_paused(env);
         Self::require_admin(env);
         let mut state = RWAOracleStorage::get(env);
         state.max_staleness = max_seconds;
