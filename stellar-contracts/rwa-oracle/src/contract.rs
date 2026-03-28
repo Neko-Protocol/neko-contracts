@@ -99,6 +99,7 @@ impl RWAOracle {
         asset_id: Symbol,
         metadata: RWAMetadata,
     ) -> Result<(), Error> {
+        Admin::require_not_paused(env);
         Admin::require_admin(env);
         if metadata.asset_id != asset_id {
             panic_with_error!(env, Error::InvalidMetadata);
@@ -139,6 +140,7 @@ impl RWAOracle {
         asset_id: Symbol,
         tokenization_info: TokenizationInfo,
     ) -> Result<(), Error> {
+        Admin::require_not_paused(env);
         Admin::require_admin(env);
         let mut state = RWAOracleStorage::get(env);
 

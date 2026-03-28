@@ -1076,6 +1076,62 @@ fn test_only_admin_can_unpause() {
     oracle2.unpause();
 }
 
+// ==================== RWA Admin Pause Tests ====================
+
+#[test]
+#[should_panic(expected = "Error(Contract, #9)")]
+fn test_pause_blocks_set_rwa_metadata() {
+    let e = Env::default();
+    e.mock_all_auths();
+
+    let oracle = create_rwa_oracle_contract(&e);
+    let asset_id = Symbol::new(&e, "NVDA");
+    let metadata = create_test_metadata(&e, asset_id.clone());
+
+    oracle.pause();
+
+    oracle.set_rwa_metadata(&asset_id, &metadata);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #9)")]
+fn test_pause_blocks_update_tokenization_info() {
+    let e = Env::default();
+    e.mock_all_auths();
+
+    let oracle = create_rwa_oracle_contract(&e);
+    let asset_id = Symbol::new(&e, "NVDA");
+
+    // First set metadata so update can work
+    let metadata = create_test_metadata(&e, asset_id.clone());
+    oracle.set_rwa_metadata(&asset_id, &metadata);
+
+    // Now pause and try to update
+    oracle.pause();
+
+    let new_tokenization = TokenizationInfo {
+        token_contract: Some(Address::generate(&e)),
+        total_supply: Some(2_000_000_000_000),
+        underlying_asset_id: Some(String::from_str(&e, "US Treasury Bond 2025")),
+        tokenization_date: Some(1_800_000_000),
+    };
+
+    oracle.update_tokenization_info(&asset_id, &new_tokenization);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #9)")]
+fn test_pause_blocks_set_max_staleness() {
+    let e = Env::default();
+    e.mock_all_auths();
+
+    let oracle = create_rwa_oracle_contract(&e);
+
+    oracle.pause();
+
+    oracle.set_max_staleness(&3600u64);
+}
+
 // ==================== TTL Extension Tests ====================
 
 #[test]
