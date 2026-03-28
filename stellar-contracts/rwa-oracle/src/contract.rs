@@ -106,20 +106,9 @@ impl RWAOracle {
         }
         let mut state = RWAOracleStorage::get(env);
 
-        // Verify asset is registered
         let asset = Asset::Other(asset_id.clone());
-        let asset_exists = state.assets.iter().any(|a| match a {
-            Asset::Other(sym) => sym == asset_id,
-            Asset::Stellar(addr) => {
-                if let Asset::Stellar(check_addr) = &asset {
-                    addr == *check_addr
-                } else {
-                    false
-                }
-            }
-        });
 
-        if !asset_exists {
+        if !state.assets.contains(&asset) {
             panic_with_error!(env, Error::AssetNotRegistered);
         }
 
