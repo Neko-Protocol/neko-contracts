@@ -201,11 +201,7 @@ impl RWAOracle {
     /// Get all registered RWA asset IDs
     pub fn get_all_rwa_assets(env: &Env) -> Vec<Symbol> {
         let state = RWAOracleStorage::get(env);
-        let mut assets = Vec::new(env);
-        for (asset_id, _) in state.rwa_metadata.iter() {
-            assets.push_back(asset_id);
-        }
-        assets
+        state.rwa_metadata.keys()
     }
 
     /// Resolve a token contract address to its oracle asset identifier

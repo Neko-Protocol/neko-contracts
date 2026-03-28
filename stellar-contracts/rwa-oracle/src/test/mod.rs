@@ -553,6 +553,35 @@ fn test_get_all_rwa_assets() {
     assert_eq!(all_assets.len(), 2);
 }
 
+// ==================== get_all_rwa_assets Tests ====================
+
+#[test]
+fn test_get_all_rwa_assets_empty() {
+    let e = Env::default();
+    e.mock_all_auths();
+    let oracle = create_rwa_oracle_contract(&e);
+    let assets = oracle.get_all_rwa_assets();
+    assert_eq!(assets.len(), 0);
+}
+
+#[test]
+fn test_get_all_rwa_assets_returns_registered_ids() {
+    let e = Env::default();
+    e.mock_all_auths();
+    let oracle = create_rwa_oracle_contract(&e);
+
+    let id_nvda = Symbol::new(&e, "NVDA");
+    let id_tsla = Symbol::new(&e, "TSLA");
+
+    oracle.set_rwa_metadata(&id_nvda, &create_test_metadata(&e, id_nvda.clone()));
+    oracle.set_rwa_metadata(&id_tsla, &create_test_metadata(&e, id_tsla.clone()));
+
+    let assets = oracle.get_all_rwa_assets();
+    assert_eq!(assets.len(), 2);
+    assert!(assets.contains(&id_nvda));
+    assert!(assets.contains(&id_tsla));
+}
+
 // ==================== SEP-40 Price Feed Tests ====================
 
 #[test]
