@@ -3,7 +3,7 @@ use soroban_sdk::{Address, Env, assert_with_error, token::TokenClient};
 use crate::admin::Admin;
 use crate::common::error::Error;
 use crate::common::storage::Storage;
-use crate::common::types::{BACKSTOP_WITHDRAWAL_QUEUE_SECONDS, PoolState};
+use crate::common::types::{BACKSTOP_WITHDRAWAL_QUEUE_SECONDS, MAX_BACKSTOP_QUEUE_SIZE, PoolState};
 
 /// Backstop Module for first-loss capital
 pub struct Backstop;
@@ -34,8 +34,9 @@ impl Backstop {
 
         deposit.amount += amount;
         deposit.deposited_at = env.ledger().timestamp();
-        deposit.in_withdrawal_queue = false;
-        deposit.queued_at = None;
+        // Do not touch in_withdrawal_queue or queued_at — an active queue entry
+        // must survive a top-up deposit so the user can still withdraw after the
+        // lock period expires.
 
         storage.backstop_deposits.set(depositor.clone(), deposit);
         storage.backstop_total += amount;
@@ -61,6 +62,14 @@ impl Backstop {
 
         if deposit.amount < amount {
             return Err(Error::InsufficientBackstopDeposit);
+        }
+
+        if deposit.in_withdrawal_queue {
+            return Err(Error::WithdrawalQueueActive);
+        }
+
+        if storage.withdrawal_queue.len() >= MAX_BACKSTOP_QUEUE_SIZE {
+            return Err(Error::WithdrawalQueueFull);
         }
 
         // Add to withdrawal queue
@@ -115,9 +124,20 @@ impl Backstop {
         // For now, we'll allow withdrawal
 
         // Update deposit
+        let queued_at = deposit.queued_at;
         deposit.amount -= amount;
         deposit.in_withdrawal_queue = false;
         deposit.queued_at = None;
+
+        // Remove the matching entry from the global withdrawal queue so that
+        // update_pool_state() does not count stale entries.
+        let mut updated_queue = soroban_sdk::Vec::new(env);
+        for req in storage.withdrawal_queue.iter() {
+            if !(req.address == *depositor && Some(req.queued_at) == queued_at) {
+                updated_queue.push_back(req);
+            }
+        }
+        storage.withdrawal_queue = updated_queue;
 
         // Get token address before updating storage
         let token_address = storage

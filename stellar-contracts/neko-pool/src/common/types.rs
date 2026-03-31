@@ -81,6 +81,7 @@ pub const DEFAULT_LIQUIDATION_FEE_RATE: u32 = 100_000;
 /// Backstop withdrawal queue timing
 pub const BACKSTOP_WITHDRAWAL_QUEUE_DAYS: u64 = 17;
 pub const BACKSTOP_WITHDRAWAL_QUEUE_SECONDS: u64 = BACKSTOP_WITHDRAWAL_QUEUE_DAYS * 24 * 60 * 60;
+pub const MAX_BACKSTOP_QUEUE_SIZE: u32 = 50;
 
 /// Bad debt auction lot multiplier (120% = 1.2x safety margin)
 /// 7 decimals: 12_000_000 = 1.2

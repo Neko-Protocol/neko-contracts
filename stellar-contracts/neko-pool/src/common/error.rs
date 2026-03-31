@@ -61,6 +61,7 @@ pub enum Error {
     WithdrawalQueueNotExpired = 72,
     BadDebtNotCovered = 73,
     BackstopThresholdNotMet = 74,
+    WithdrawalQueueFull = 75,
 
     // Oracle errors
     OraclePriceFetchFailed = 80,
