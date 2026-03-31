@@ -1,21 +1,22 @@
-use soroban_sdk::{Address, Env, Map, Symbol, Vec, panic_with_error};
+use soroban_sdk::{Address, Env, Map, Symbol, panic_with_error};
 
 use crate::common::error::Error;
 use crate::common::types::{
     AssetType, AuctionData, BackstopDeposit, CDP, DataKey, INSTANCE_BUMP, INSTANCE_TTL,
     InterestRateParams, PoolState, ReserveData, SHARED_BUMP, SHARED_TTL, USER_BUMP, USER_TTL,
-    UserAssetKey, UserTokenKey, WithdrawalRequest,
+    UserAssetKey,
 };
 
 /// Storage operations for the lending pool.
 ///
 /// Storage layout:
-/// - Instance  (INSTANCE_TTL): config fields — Admin, PoolState, oracle addresses, fee rates,
-///   static config maps (TokenContracts, AssetTypes, CollateralFactors, …)
-/// - Persistent SHARED (SHARED_TTL): per-asset and global mutable data —
-///   PoolBalance, ReserveData, InterestRateParams, Auction, BackstopTotal, WithdrawalQueue
+/// - Instance  (INSTANCE_TTL): fixed-size scalar config — Admin, PoolState, oracle addresses,
+///   fee rates. No Maps; Maps were moved to per-entry persistent entries to avoid unbounded growth.
+/// - Persistent SHARED (SHARED_TTL): per-asset config (CollateralFactor, TokenContract, AssetType…),
+///   per-asset state (PoolBalance, ReserveData, InterestRateParams),
+///   and global counters (BackstopTotal, BackstopQueuedTotal, Auction).
 /// - Persistent USER   (USER_TTL): per-user data —
-///   BTokenBalance, DTokenBalance, Collateral, Cdp, BackstopDeposit
+///   BTokenBalance, DTokenBalance, Cdp (which embeds collateral), BackstopDeposit.
 pub struct Storage;
 
 impl Storage {
@@ -229,129 +230,84 @@ impl Storage {
     }
 
     // =========================================================================
-    // Asset config maps (instance storage — static config)
+    // Asset config (persistent per-entry, SHARED_TTL)
+    // Moving from instance Maps to per-entry persistent prevents unbounded
+    // instance storage growth as more assets and collateral tokens are added.
     // =========================================================================
 
     pub fn get_token_contract(env: &Env, asset: &Symbol) -> Option<Address> {
-        Self::extend_instance_ttl(env);
-        let map: Map<Symbol, Address> = env
-            .storage()
-            .instance()
-            .get(&DataKey::TokenContracts)
-            .unwrap_or(Map::new(env));
-        map.get(asset.clone())
+        let key = DataKey::TokenContract(asset.clone());
+        let val: Option<Address> = env.storage().persistent().get(&key);
+        if val.is_some() {
+            Self::extend_shared_ttl(env, &key);
+        }
+        val
     }
 
     pub fn set_token_contract(env: &Env, asset: &Symbol, token_address: &Address) {
-        let mut map: Map<Symbol, Address> = env
-            .storage()
-            .instance()
-            .get(&DataKey::TokenContracts)
-            .unwrap_or(Map::new(env));
-        map.set(asset.clone(), token_address.clone());
-        env.storage()
-            .instance()
-            .set(&DataKey::TokenContracts, &map);
-        Self::extend_instance_ttl(env);
+        let key = DataKey::TokenContract(asset.clone());
+        env.storage().persistent().set(&key, token_address);
+        Self::extend_shared_ttl(env, &key);
     }
 
     pub fn get_asset_type(env: &Env, asset: &Symbol) -> AssetType {
-        Self::extend_instance_ttl(env);
-        let map: Map<Symbol, AssetType> = env
-            .storage()
-            .instance()
-            .get(&DataKey::AssetTypes)
-            .unwrap_or(Map::new(env));
-        map.get(asset.clone()).unwrap_or(AssetType::Crypto)
+        let key = DataKey::AssetType(asset.clone());
+        let val: Option<AssetType> = env.storage().persistent().get(&key);
+        if val.is_some() {
+            Self::extend_shared_ttl(env, &key);
+        }
+        val.unwrap_or(AssetType::Crypto)
     }
 
     pub fn set_asset_type(env: &Env, asset: &Symbol, asset_type: AssetType) {
-        let mut map: Map<Symbol, AssetType> = env
-            .storage()
-            .instance()
-            .get(&DataKey::AssetTypes)
-            .unwrap_or(Map::new(env));
-        map.set(asset.clone(), asset_type);
-        env.storage().instance().set(&DataKey::AssetTypes, &map);
-        Self::extend_instance_ttl(env);
+        let key = DataKey::AssetType(asset.clone());
+        env.storage().persistent().set(&key, &asset_type);
+        Self::extend_shared_ttl(env, &key);
     }
 
     pub fn get_collateral_asset_type(env: &Env, token: &Address) -> AssetType {
-        Self::extend_instance_ttl(env);
-        let map: Map<Address, AssetType> = env
-            .storage()
-            .instance()
-            .get(&DataKey::CollateralAssetTypes)
-            .unwrap_or(Map::new(env));
-        map.get(token.clone()).unwrap_or(AssetType::Rwa)
+        let key = DataKey::CollateralAssetType(token.clone());
+        let val: Option<AssetType> = env.storage().persistent().get(&key);
+        if val.is_some() {
+            Self::extend_shared_ttl(env, &key);
+        }
+        val.unwrap_or(AssetType::Rwa)
     }
 
     pub fn set_collateral_asset_type(env: &Env, token: &Address, asset_type: AssetType) {
-        let mut map: Map<Address, AssetType> = env
-            .storage()
-            .instance()
-            .get(&DataKey::CollateralAssetTypes)
-            .unwrap_or(Map::new(env));
-        map.set(token.clone(), asset_type);
-        env.storage()
-            .instance()
-            .set(&DataKey::CollateralAssetTypes, &map);
-        Self::extend_instance_ttl(env);
+        let key = DataKey::CollateralAssetType(token.clone());
+        env.storage().persistent().set(&key, &asset_type);
+        Self::extend_shared_ttl(env, &key);
     }
 
     pub fn get_collateral_symbol(env: &Env, token: &Address) -> Option<Symbol> {
-        Self::extend_instance_ttl(env);
-        let map: Map<Address, Symbol> = env
-            .storage()
-            .instance()
-            .get(&DataKey::CollateralSymbols)
-            .unwrap_or(Map::new(env));
-        map.get(token.clone())
+        let key = DataKey::CollateralSymbol(token.clone());
+        let val: Option<Symbol> = env.storage().persistent().get(&key);
+        if val.is_some() {
+            Self::extend_shared_ttl(env, &key);
+        }
+        val
     }
 
     pub fn set_collateral_symbol(env: &Env, token: &Address, symbol: Symbol) {
-        let mut map: Map<Address, Symbol> = env
-            .storage()
-            .instance()
-            .get(&DataKey::CollateralSymbols)
-            .unwrap_or(Map::new(env));
-        map.set(token.clone(), symbol);
-        env.storage()
-            .instance()
-            .set(&DataKey::CollateralSymbols, &map);
-        Self::extend_instance_ttl(env);
+        let key = DataKey::CollateralSymbol(token.clone());
+        env.storage().persistent().set(&key, &symbol);
+        Self::extend_shared_ttl(env, &key);
     }
 
     pub fn get_collateral_factor(env: &Env, token: &Address) -> Option<u32> {
-        Self::extend_instance_ttl(env);
-        let map: Map<Address, u32> = env
-            .storage()
-            .instance()
-            .get(&DataKey::CollateralFactors)
-            .unwrap_or(Map::new(env));
-        map.get(token.clone())
+        let key = DataKey::CollateralFactor(token.clone());
+        let val: Option<u32> = env.storage().persistent().get(&key);
+        if val.is_some() {
+            Self::extend_shared_ttl(env, &key);
+        }
+        val
     }
 
     pub fn set_collateral_factor(env: &Env, token: &Address, factor: u32) {
-        let mut map: Map<Address, u32> = env
-            .storage()
-            .instance()
-            .get(&DataKey::CollateralFactors)
-            .unwrap_or(Map::new(env));
-        map.set(token.clone(), factor);
-        env.storage()
-            .instance()
-            .set(&DataKey::CollateralFactors, &map);
-        Self::extend_instance_ttl(env);
-    }
-
-    /// Returns the full collateral factors map (used for iterating in borrow limit calc).
-    pub fn get_collateral_factors(env: &Env) -> Map<Address, u32> {
-        Self::extend_instance_ttl(env);
-        env.storage()
-            .instance()
-            .get(&DataKey::CollateralFactors)
-            .unwrap_or(Map::new(env))
+        let key = DataKey::CollateralFactor(token.clone());
+        env.storage().persistent().set(&key, &factor);
+        Self::extend_shared_ttl(env, &key);
     }
 
     // =========================================================================
@@ -491,28 +447,27 @@ impl Storage {
     }
 
     // =========================================================================
-    // Collateral (persistent, per user per token)
+    // Collateral — CDP.collateral is the single source of truth.
+    // These wrappers read/write through the CDP to eliminate the old duplicate
+    // Collateral(UserTokenKey) entries. All enumeration uses CDP.collateral.
     // =========================================================================
 
-    pub fn get_collateral(env: &Env, borrower: &Address, neko_token: &Address) -> i128 {
-        let key = DataKey::Collateral(UserTokenKey {
-            user: borrower.clone(),
-            token: neko_token.clone(),
-        });
-        let val: Option<i128> = env.storage().persistent().get(&key);
-        if val.is_some() {
-            Self::extend_user_ttl(env, &key);
-        }
-        val.unwrap_or(0)
+    pub fn get_collateral(env: &Env, borrower: &Address, token: &Address) -> i128 {
+        Self::get_cdp(env, borrower)
+            .and_then(|cdp| cdp.collateral.get(token.clone()))
+            .unwrap_or(0)
     }
 
-    pub fn set_collateral(env: &Env, borrower: &Address, neko_token: &Address, amount: i128) {
-        let key = DataKey::Collateral(UserTokenKey {
-            user: borrower.clone(),
-            token: neko_token.clone(),
+    pub fn set_collateral(env: &Env, borrower: &Address, token: &Address, amount: i128) {
+        let mut cdp = Self::get_cdp(env, borrower).unwrap_or_else(|| CDP {
+            collateral: Map::new(env),
+            debt_asset: None,
+            d_tokens: 0,
+            created_at: env.ledger().timestamp(),
+            last_update: env.ledger().timestamp(),
         });
-        env.storage().persistent().set(&key, &amount);
-        Self::extend_user_ttl(env, &key);
+        cdp.collateral.set(token.clone(), amount);
+        Self::set_cdp(env, borrower, &cdp);
     }
 
     // =========================================================================
@@ -573,21 +528,22 @@ impl Storage {
     }
 
     // =========================================================================
-    // Withdrawal queue (persistent, global, bounded by MAX_BACKSTOP_QUEUE_SIZE)
+    // Backstop queued total — O(1) Q4W counter replacing the global Vec.
+    // Incremented on initiate_withdrawal, decremented on withdraw.
     // =========================================================================
 
-    pub fn get_withdrawal_queue(env: &Env) -> Vec<WithdrawalRequest> {
-        let key = DataKey::WithdrawalQueue;
-        let val: Option<Vec<WithdrawalRequest>> = env.storage().persistent().get(&key);
+    pub fn get_backstop_queued_total(env: &Env) -> i128 {
+        let key = DataKey::BackstopQueuedTotal;
+        let val: Option<i128> = env.storage().persistent().get(&key);
         if val.is_some() {
             Self::extend_shared_ttl(env, &key);
         }
-        val.unwrap_or(Vec::new(env))
+        val.unwrap_or(0)
     }
 
-    pub fn set_withdrawal_queue(env: &Env, queue: &Vec<WithdrawalRequest>) {
-        let key = DataKey::WithdrawalQueue;
-        env.storage().persistent().set(&key, queue);
+    pub fn set_backstop_queued_total(env: &Env, total: i128) {
+        let key = DataKey::BackstopQueuedTotal;
+        env.storage().persistent().set(&key, &total);
         Self::extend_shared_ttl(env, &key);
     }
 

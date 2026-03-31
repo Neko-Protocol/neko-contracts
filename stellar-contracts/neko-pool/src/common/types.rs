@@ -81,7 +81,7 @@ pub const DEFAULT_LIQUIDATION_FEE_RATE: u32 = 100_000;
 /// Backstop withdrawal queue timing
 pub const BACKSTOP_WITHDRAWAL_QUEUE_DAYS: u64 = 17;
 pub const BACKSTOP_WITHDRAWAL_QUEUE_SECONDS: u64 = BACKSTOP_WITHDRAWAL_QUEUE_DAYS * 24 * 60 * 60;
-pub const MAX_BACKSTOP_QUEUE_SIZE: u32 = 50;
+// MAX_BACKSTOP_QUEUE_SIZE removed — Q4W is now per-user with a global counter
 
 /// Bad debt auction lot multiplier (120% = 1.2x safety margin)
 /// 7 decimals: 12_000_000 = 1.2
@@ -284,30 +284,23 @@ pub struct AuctionData {
 // BACKSTOP TYPES
 // ============================================================================
 
-/// Backstop deposit record
+/// Backstop deposit record with embedded Q4W (Queue for Withdrawal) state.
+/// queued_amount == 0 means the depositor is NOT in the withdrawal queue.
+/// The global BackstopQueuedTotal counter is kept in sync with the sum of all queued_amounts.
 #[contracttype]
 #[derive(Clone, Debug)]
 pub struct BackstopDeposit {
-    /// Deposit amount (LP tokens or native tokens)
+    /// Total deposited amount
     pub amount: i128,
 
     /// Deposit timestamp
     pub deposited_at: u64,
 
-    /// Whether in withdrawal queue
-    pub in_withdrawal_queue: bool,
+    /// Amount currently in Q4W (0 = not queued)
+    pub queued_amount: i128,
 
-    /// Queue entry timestamp (if queued)
+    /// Queue entry timestamp (Some if queued_amount > 0)
     pub queued_at: Option<u64>,
-}
-
-/// Withdrawal request (Queue for Withdrawal - Q4W)
-#[contracttype]
-#[derive(Clone, Debug)]
-pub struct WithdrawalRequest {
-    pub address: Address,
-    pub amount: i128,
-    pub queued_at: u64,
 }
 
 // ============================================================================
@@ -446,14 +439,6 @@ pub struct UserAssetKey {
     pub asset: Symbol,
 }
 
-/// Key for per-user per-token data (collateral)
-#[contracttype]
-#[derive(Clone)]
-pub struct UserTokenKey {
-    pub user: Address,
-    pub token: Address,
-}
-
 // ============================================================================
 // STORAGE KEYS
 // ============================================================================
@@ -461,13 +446,15 @@ pub struct UserTokenKey {
 /// Typed storage keys for the lending pool.
 ///
 /// Layout:
-/// - Instance storage  : config fields (Admin, PoolState, fee rates, oracles, static maps)
-/// - Persistent SHARED : per-asset data (PoolBalance, ReserveData, Auction, BackstopTotal…)
-/// - Persistent USER   : per-user data (BTokenBalance, DTokenBalance, Collateral, Cdp, BackstopDeposit)
+/// - Instance storage          : fixed-size scalar config (Admin, PoolState, fee rates, oracles)
+/// - Persistent SHARED per-entry: per-asset config set by admin (CollateralFactor, TokenContract…)
+///   and per-asset state (PoolBalance, ReserveData, InterestRateParams, Auction)
+///   and global counters (BackstopTotal, BackstopQueuedTotal)
+/// - Persistent USER per-entry : per-user positions (BTokenBalance, DTokenBalance, Cdp, BackstopDeposit)
 #[contracttype]
 #[derive(Clone)]
 pub enum DataKey {
-    // ---- Instance storage (lean config) ----
+    // ---- Instance storage (lean config — fixed-size scalars only) ----
     Admin,
     PoolState,
     NekoOracle,
@@ -479,13 +466,15 @@ pub enum DataKey {
     ReserveFactor,
     OriginationFeeRate,
     LiquidationFeeRate,
-    TokenContracts,       // Map<Symbol, Address>
-    AssetTypes,           // Map<Symbol, AssetType>
-    CollateralAssetTypes, // Map<Address, AssetType>
-    CollateralSymbols,    // Map<Address, Symbol>
-    CollateralFactors,    // Map<Address, u32>
 
-    // ---- Persistent storage (per asset, SHARED_TTL) ----
+    // ---- Persistent storage (per-asset config, SHARED_TTL — set by admin) ----
+    TokenContract(Symbol),
+    AssetType(Symbol),
+    CollateralAssetType(Address),
+    CollateralSymbol(Address),
+    CollateralFactor(Address),
+
+    // ---- Persistent storage (per-asset state, SHARED_TTL) ----
     PoolBalance(Symbol),
     ReserveData(Symbol),
     InterestRateParams(Symbol),
@@ -493,12 +482,11 @@ pub enum DataKey {
     // ---- Persistent storage (per user, USER_TTL) ----
     BTokenBalance(UserAssetKey),
     DTokenBalance(UserAssetKey),
-    Collateral(UserTokenKey),
     Cdp(Address),
     BackstopDeposit(Address),
 
     // ---- Persistent storage (global mutable, SHARED_TTL) ----
     BackstopTotal,
-    WithdrawalQueue,
+    BackstopQueuedTotal,
     Auction(u32),
 }
