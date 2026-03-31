@@ -12,4 +12,4 @@ mod test;
 
 pub use contract::{NekoBackstop, NekoBackstopClient};
 pub use error::Error;
-pub use types::{BackstopDeposit, PoolState};
+pub use types::{PoolState, Q4W, UserBalance};

@@ -3,7 +3,7 @@ use soroban_sdk::{Address, Env, contract, contractimpl, panic_with_error};
 use crate::error::Error;
 use crate::operations::Backstop;
 use crate::storage::Storage;
-use crate::types::{BackstopDeposit, PoolState};
+use crate::types::{PoolState, UserBalance};
 
 /// Backstop contract — holds first-loss capital for the Neko lending pool.
 ///
@@ -12,13 +12,13 @@ use crate::types::{BackstopDeposit, PoolState};
 ///   2. Deploy neko-backstop (initialize with pool address)
 ///   3. Call pool.set_backstop_contract(backstop_address)
 ///
-/// After step 3, backstop automatically pushes pool state on every deposit/withdraw.
+/// After step 3, backstop automatically pushes pool state on every
+/// deposit/queue_withdrawal/dequeue_withdrawal/withdraw change.
 #[contract]
 pub struct NekoBackstop;
 
 #[contractimpl]
 impl NekoBackstop {
-    /// Initialize the backstop contract.
     pub fn initialize(
         env: Env,
         admin: Address,
@@ -29,7 +29,6 @@ impl NekoBackstop {
         if Storage::is_initialized(&env) {
             panic_with_error!(&env, Error::AlreadyInitialized);
         }
-
         Storage::set_admin(&env, &admin);
         Storage::set_pool_contract(&env, &pool);
         Storage::set_backstop_token(&env, &backstop_token);
@@ -40,17 +39,13 @@ impl NekoBackstop {
 
     // ========== Admin ==========
 
-    /// Update the backstop threshold. Admin-only.
     pub fn set_threshold(env: Env, threshold: i128) {
-        let admin = Storage::get_admin(&env);
-        admin.require_auth();
+        Storage::get_admin(&env).require_auth();
         Storage::set_backstop_threshold(&env, threshold);
     }
 
-    /// Update the backstop token address. Admin-only.
     pub fn set_backstop_token(env: Env, token: Address) {
-        let admin = Storage::get_admin(&env);
-        admin.require_auth();
+        Storage::get_admin(&env).require_auth();
         Storage::set_backstop_token(&env, &token);
     }
 
@@ -61,12 +56,17 @@ impl NekoBackstop {
         Backstop::deposit(&env, &depositor, amount)
     }
 
-    /// Enter the 17-day withdrawal queue.
-    pub fn initiate_withdrawal(env: Env, depositor: Address, amount: i128) -> Result<(), Error> {
-        Backstop::initiate_withdrawal(&env, &depositor, amount)
+    /// Add `amount` to the withdrawal queue (up to MAX_Q4W_SIZE entries per user).
+    pub fn queue_withdrawal(env: Env, depositor: Address, amount: i128) -> Result<(), Error> {
+        Backstop::queue_withdrawal(&env, &depositor, amount)
     }
 
-    /// Withdraw after queue period has elapsed.
+    /// Cancel the most recently queued withdrawal entry.
+    pub fn dequeue_withdrawal(env: Env, depositor: Address) -> Result<(), Error> {
+        Backstop::dequeue_withdrawal(&env, &depositor)
+    }
+
+    /// Withdraw from the oldest expired Q4W entry.
     pub fn withdraw(env: Env, depositor: Address, amount: i128) -> Result<(), Error> {
         Backstop::withdraw(&env, &depositor, amount)
     }
@@ -81,27 +81,22 @@ impl NekoBackstop {
 
     // ========== View Functions ==========
 
-    /// Get deposit info for a depositor.
-    pub fn get_deposit(env: Env, depositor: Address) -> BackstopDeposit {
-        Backstop::get_deposit(&env, &depositor)
+    pub fn get_user_balance(env: Env, depositor: Address) -> UserBalance {
+        Backstop::get_user_balance(&env, &depositor)
     }
 
-    /// Get total backstop balance.
     pub fn get_total(env: Env) -> i128 {
         Backstop::get_total(&env)
     }
 
-    /// Compute the pool state derived from current backstop metrics.
     pub fn get_pool_state(env: Env) -> PoolState {
         Backstop::compute_pool_state(&env)
     }
 
-    /// Get the registered pool contract address.
     pub fn get_pool_contract(env: Env) -> Address {
         Storage::get_pool_contract(&env)
     }
 
-    /// Get the backstop token address.
     pub fn get_backstop_token(env: Env) -> Option<Address> {
         Storage::get_backstop_token(&env)
     }

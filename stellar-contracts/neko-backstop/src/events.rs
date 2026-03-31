@@ -1,4 +1,4 @@
-use soroban_sdk::{Address, contractevent};
+use soroban_sdk::{Address, Env, contractevent};
 
 use crate::types::PoolState;
 
@@ -10,10 +10,11 @@ pub struct BackstopDepositEvent {
 }
 
 #[contractevent]
-pub struct BackstopWithdrawalQueuedEvent {
+pub struct BackstopQueueEvent {
     pub depositor: Address,
     pub amount: i128,
-    pub queued_at: u64,
+    /// Expiration timestamp for queue_withdrawal; 0 for dequeue_withdrawal.
+    pub exp: u64,
 }
 
 #[contractevent]
@@ -37,7 +38,7 @@ pub struct BadDebtCoveredEvent {
 pub struct Events;
 
 impl Events {
-    pub fn deposit(env: &soroban_sdk::Env, depositor: &Address, amount: i128, total: i128) {
+    pub fn deposit(env: &Env, depositor: &Address, amount: i128, total: i128) {
         BackstopDepositEvent {
             depositor: depositor.clone(),
             amount,
@@ -46,16 +47,25 @@ impl Events {
         .publish(env);
     }
 
-    pub fn withdrawal_queued(env: &soroban_sdk::Env, depositor: &Address, amount: i128, queued_at: u64) {
-        BackstopWithdrawalQueuedEvent {
+    pub fn withdrawal_queued(env: &Env, depositor: &Address, amount: i128, exp: u64) {
+        BackstopQueueEvent {
             depositor: depositor.clone(),
             amount,
-            queued_at,
+            exp,
         }
         .publish(env);
     }
 
-    pub fn withdraw(env: &soroban_sdk::Env, depositor: &Address, amount: i128, total: i128) {
+    pub fn withdrawal_dequeued(env: &Env, depositor: &Address, amount: i128) {
+        BackstopQueueEvent {
+            depositor: depositor.clone(),
+            amount,
+            exp: 0,
+        }
+        .publish(env);
+    }
+
+    pub fn withdraw(env: &Env, depositor: &Address, amount: i128, total: i128) {
         BackstopWithdrawEvent {
             depositor: depositor.clone(),
             amount,
@@ -64,11 +74,11 @@ impl Events {
         .publish(env);
     }
 
-    pub fn pool_state_updated(env: &soroban_sdk::Env, new_state: PoolState) {
+    pub fn pool_state_updated(env: &Env, new_state: PoolState) {
         PoolStateUpdatedEvent { new_state }.publish(env);
     }
 
-    pub fn bad_debt_covered(env: &soroban_sdk::Env, amount: i128, new_total: i128) {
+    pub fn bad_debt_covered(env: &Env, amount: i128, new_total: i128) {
         BadDebtCoveredEvent { amount, new_total }.publish(env);
     }
 }

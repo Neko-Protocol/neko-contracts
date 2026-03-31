@@ -1,17 +1,11 @@
-use soroban_sdk::{Address, Env, panic_with_error};
+use soroban_sdk::{Address, Env, Vec, panic_with_error};
 
 use crate::error::Error;
-use crate::types::{
-    BackstopDeposit, DataKey, INSTANCE_BUMP, INSTANCE_TTL, USER_BUMP, USER_TTL,
-};
+use crate::types::{DataKey, INSTANCE_BUMP, INSTANCE_TTL, USER_BUMP, USER_TTL, UserBalance};
 
 pub struct Storage;
 
 impl Storage {
-    // =========================================================================
-    // TTL helpers
-    // =========================================================================
-
     pub fn extend_instance_ttl(env: &Env) {
         env.storage()
             .instance()
@@ -100,21 +94,24 @@ impl Storage {
     }
 
     // =========================================================================
-    // Per-depositor deposit
+    // Per-depositor balance
     // =========================================================================
 
-    pub fn get_backstop_deposit(env: &Env, depositor: &Address) -> Option<BackstopDeposit> {
-        let key = DataKey::BackstopDeposit(depositor.clone());
-        let result = env.storage().persistent().get(&key);
+    pub fn get_user_balance(env: &Env, depositor: &Address) -> UserBalance {
+        let key = DataKey::UserBalance(depositor.clone());
+        let result: Option<UserBalance> = env.storage().persistent().get(&key);
         if result.is_some() {
             Self::extend_user_ttl(env, &key);
         }
-        result
+        result.unwrap_or(UserBalance {
+            amount: 0,
+            q4w: Vec::new(env),
+        })
     }
 
-    pub fn set_backstop_deposit(env: &Env, depositor: &Address, deposit: &BackstopDeposit) {
-        let key = DataKey::BackstopDeposit(depositor.clone());
-        env.storage().persistent().set(&key, deposit);
+    pub fn set_user_balance(env: &Env, depositor: &Address, balance: &UserBalance) {
+        let key = DataKey::UserBalance(depositor.clone());
+        env.storage().persistent().set(&key, balance);
         Self::extend_user_ttl(env, &key);
     }
 

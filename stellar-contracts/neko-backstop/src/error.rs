@@ -18,7 +18,7 @@ pub enum Error {
 
     // Backstop errors
     InsufficientBackstopDeposit = 20,
-    WithdrawalQueueActive = 21,
+    WithdrawalQueueFull = 21,
     WithdrawalQueueNotExpired = 22,
     BadDebtNotCovered = 23,
     BackstopThresholdNotMet = 24,
