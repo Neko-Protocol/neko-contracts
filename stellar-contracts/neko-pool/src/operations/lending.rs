@@ -41,11 +41,9 @@ impl Lending {
             }
         }
 
-        // Accrue interest before deposit
-        Interest::accrue_interest(env, asset)?;
-
-        // Get current bTokenRate
-        let b_token_rate = Storage::get_b_token_rate(env, asset);
+        // Accrue interest before deposit — reuse returned data to avoid a second storage read
+        let reserve = Interest::accrue_interest(env, asset)?;
+        let b_token_rate = reserve.b_rate;
 
         // Calculate bTokens with rounding down
         // This favors the protocol by minting fewer bTokens
@@ -92,8 +90,8 @@ impl Lending {
             return Err(Error::PoolFrozen);
         }
 
-        // Accrue interest before withdrawal
-        Interest::accrue_interest(env, asset)?;
+        // Accrue interest before withdrawal — reuse returned data to avoid a second storage read
+        let reserve = Interest::accrue_interest(env, asset)?;
 
         // Get current lender balance and adjust if user tries to withdraw more than they have
         let lender_balance = Storage::get_b_token_balance(env, lender, asset);
@@ -107,8 +105,7 @@ impl Lending {
             return Err(Error::InsufficientBTokenBalance);
         }
 
-        // Get current bTokenRate
-        let b_token_rate = Storage::get_b_token_rate(env, asset);
+        let b_token_rate = reserve.b_rate;
 
         // Calculate amount to withdraw: bTokens × bTokenRate / SCALAR_12
         let amount = b_tokens_to_burn

@@ -41,8 +41,8 @@ impl Borrowing {
             SCALAR_7
         };
 
-        // Accrue interest before borrow
-        Interest::accrue_interest(env, asset)?;
+        // Accrue interest before borrow — reuse returned data to avoid repeated storage reads
+        let mut reserve = Interest::accrue_interest(env, asset)?;
 
         // Get or create CDP
         let mut cdp =
@@ -86,8 +86,8 @@ impl Borrowing {
             return Err(Error::InsufficientPoolBalance);
         }
 
-        // Get current dTokenRate (12 decimals)
-        let d_token_rate = Storage::get_d_token_rate(env, asset);
+        // Get dTokenRate from cached reserve data (no extra storage read)
+        let d_token_rate = reserve.d_rate;
 
         // Calculate origination fee
         let origination_fee_rate = Storage::get_origination_fee_rate(env) as i128;
@@ -103,9 +103,8 @@ impl Borrowing {
             .ok_or(Error::ArithmeticError)?;
         let d_tokens = types::rounding::to_d_token_up(borrow_plus_fee, d_token_rate)?;
 
-        // Track origination fee as treasury credit (already in pool, earmarked for treasury)
+        // Track origination fee as treasury credit — update cached reserve and write once
         if origination_fee > 0 {
-            let mut reserve = Storage::get_reserve_data(env, asset);
             reserve.treasury_credit = reserve
                 .treasury_credit
                 .checked_add(origination_fee)
@@ -160,8 +159,8 @@ impl Borrowing {
 
         assert_with_error!(env, d_tokens > 0, Error::NotPositive);
 
-        // Accrue interest before repay
-        Interest::accrue_interest(env, asset)?;
+        // Accrue interest before repay — reuse returned data to avoid a second storage read
+        let reserve = Interest::accrue_interest(env, asset)?;
 
         // Get CDP
         let mut cdp = Storage::get_cdp(env, borrower).ok_or(Error::DebtAssetNotSet)?;
@@ -186,8 +185,8 @@ impl Borrowing {
             d_tokens
         };
 
-        // Get current dTokenRate (12 decimals)
-        let d_token_rate = Storage::get_d_token_rate(env, asset);
+        // Get dTokenRate from cached reserve data (no extra storage read)
+        let d_token_rate = reserve.d_rate;
 
         // Calculate amount to repay: dTokens × dTokenRate / SCALAR_12
         let amount = d_tokens_to_burn

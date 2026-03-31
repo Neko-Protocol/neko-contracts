@@ -249,7 +249,7 @@ impl LendingContract {
 
     /// Accrue interest for an asset
     pub fn accrue_interest(env: Env, asset: Symbol) -> Result<(), Error> {
-        Interest::accrue_interest(&env, &asset)
+        Interest::accrue_interest(&env, &asset).map(|_| ())
     }
 
     // ========== Liquidation Functions ==========

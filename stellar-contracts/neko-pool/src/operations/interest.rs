@@ -15,9 +15,10 @@ use crate::common::types::{InterestRateParams, ReserveData, SCALAR_7, SCALAR_12,
 pub struct Interest;
 
 impl Interest {
-    /// Accrue interest for an asset
-    /// Updates b_rate, d_rate, ir_mod, and backstop_credit
-    pub fn accrue_interest(env: &Env, asset: &Symbol) -> Result<(), Error> {
+    /// Accrue interest for an asset.
+    /// Updates b_rate, d_rate, ir_mod, and backstop_credit, then returns the updated ReserveData
+    /// so callers can reuse it without a second storage read.
+    pub fn accrue_interest(env: &Env, asset: &Symbol) -> Result<ReserveData, Error> {
         let current_time = env.ledger().timestamp();
 
         // Get or create reserve data
@@ -25,14 +26,14 @@ impl Interest {
 
         // No time has passed, no accrual needed
         if current_time <= reserve.last_time {
-            return Ok(());
+            return Ok(reserve);
         }
 
         // No supply, no accrual needed
         if reserve.b_supply == 0 {
             reserve.last_time = current_time;
             Storage::set_reserve_data(env, asset, &reserve);
-            return Ok(());
+            return Ok(reserve);
         }
 
         // Get interest rate parameters
@@ -46,7 +47,7 @@ impl Interest {
         if utilization == 0 {
             reserve.last_time = current_time;
             Storage::set_reserve_data(env, asset, &reserve);
-            return Ok(());
+            return Ok(reserve);
         }
 
         // Calculate accrual and update reserve
@@ -78,7 +79,7 @@ impl Interest {
         // Emit event
         Events::interest_accrued(env, asset, reserve.b_rate, reserve.d_rate, reserve.ir_mod);
 
-        Ok(())
+        Ok(reserve)
     }
 
     /// Calculate accrual ratio and new interest rate modifier
