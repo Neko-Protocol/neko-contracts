@@ -1,12 +1,12 @@
 [workspace]
 resolver = "2"
 members = [
-  "rwa-lending",
-  "rwa-oracle",
-  "rwa-token",
-  "rwa-vault",
-  "rwa-faucet",
-  "adapters/adapter-rwa-lending",
+  "neko-pool",
+  "neko-oracle",
+  "neko-token",
+  "neko-vault",
+  "neko-faucet",
+  "adapters/adapter-neko",
   "adapters/adapter-blend",
   "adapters/adapter-soroswap",
   "adapters/adapter-aquarius"

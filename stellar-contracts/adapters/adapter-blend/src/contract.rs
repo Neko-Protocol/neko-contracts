@@ -5,7 +5,7 @@ use crate::blend_pool;
 use crate::common::events::Events;
 use crate::common::storage::Storage;
 
-/// Adapter connecting rwa-vault to a single Blend lending pool.
+/// Adapter connecting neko-vault to a single Blend lending pool.
 ///
 /// Cross-contract auth flow for a_deposit:
 ///   vault → token.transfer(vault, adapter, amount)     [vault self-auth]
@@ -108,7 +108,7 @@ impl BlendAdapter {
     ///   2. Transfers the BLND to the vault (`to`)
     ///   3. Returns the BLND amount harvested
     ///
-    /// The vault's rwa-vault#harvest_all() accumulates this in liquid_reserve.
+    /// The vault's neko-vault#harvest_all() accumulates this in liquid_reserve.
     /// Swapping BLND → deposit_token is left to the vault manager.
     pub fn a_harvest(env: Env, to: Address) -> i128 {
         let storage = Storage::load(&env);

@@ -1,0 +1,25 @@
+[package]
+name = "adapter-neko"
+description = "Neko Adapter - Connects neko-vault to neko-pool"
+version.workspace = true
+authors.workspace = true
+license.workspace = true
+edition.workspace = true
+repository.workspace = true
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+doctest = false
+
+[dependencies]
+soroban-sdk = { workspace = true }
+
+[dev-dependencies]
+soroban-sdk = { workspace = true, features = ["testutils"] }
+neko-oracle = { path = "../../neko-oracle" }
+neko-token = { path = "../../neko-token" }
+
+[package.metadata.stellar]
+contract = true
+cargo_inherit = true
