@@ -119,6 +119,16 @@ pub struct LiquidationFeeEvent {
     pub treasury: Address,
 }
 
+#[contractevent]
+pub struct AdminProposedEvent {
+    pub proposed: Address,
+}
+
+#[contractevent]
+pub struct AdminChangedEvent {
+    pub new_admin: Address,
+}
+
 /// Helper struct for publishing events
 pub struct Events;
 
@@ -355,6 +365,20 @@ impl Events {
             asset: asset.clone(),
             interest_received,
             backstop_paid,
+        }
+        .publish(env);
+    }
+
+    pub fn admin_proposed(env: &soroban_sdk::Env, proposed: &Address) {
+        AdminProposedEvent {
+            proposed: proposed.clone(),
+        }
+        .publish(env);
+    }
+
+    pub fn admin_changed(env: &soroban_sdk::Env, new_admin: &Address) {
+        AdminChangedEvent {
+            new_admin: new_admin.clone(),
         }
         .publish(env);
     }

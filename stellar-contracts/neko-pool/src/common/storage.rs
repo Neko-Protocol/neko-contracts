@@ -3,8 +3,8 @@ use soroban_sdk::{Address, Env, Map, Symbol, panic_with_error};
 use crate::common::error::Error;
 use crate::common::types::{
     AssetType, AuctionData, BackstopDeposit, CDP, DataKey, AUCTION_BUMP, AUCTION_TTL,
-    INSTANCE_BUMP, INSTANCE_TTL, InterestRateParams, PoolState, ReserveData, SHARED_BUMP,
-    SHARED_TTL, USER_BUMP, USER_TTL, UserAssetKey,
+    INSTANCE_BUMP, INSTANCE_TTL, InterestRateParams, PoolState, PROPOSAL_BUMP, PROPOSAL_TTL,
+    ReserveData, SHARED_BUMP, SHARED_TTL, USER_BUMP, USER_TTL, UserAssetKey,
 };
 
 /// Storage operations for the lending pool.
@@ -68,6 +68,29 @@ impl Storage {
         }
         env.storage().instance().set(&DataKey::Admin, admin);
         Self::extend_instance_ttl(env);
+    }
+
+    /// Overwrite the admin directly — only called by accept_admin after two-step verification.
+    pub fn replace_admin(env: &Env, admin: &Address) {
+        env.storage().instance().set(&DataKey::Admin, admin);
+        Self::extend_instance_ttl(env);
+    }
+
+    pub fn get_proposed_admin(env: &Env) -> Option<Address> {
+        env.storage().temporary().get(&DataKey::ProposedAdmin)
+    }
+
+    pub fn set_proposed_admin(env: &Env, proposed: &Address) {
+        env.storage()
+            .temporary()
+            .set(&DataKey::ProposedAdmin, proposed);
+        env.storage()
+            .temporary()
+            .extend_ttl(&DataKey::ProposedAdmin, PROPOSAL_TTL, PROPOSAL_BUMP);
+    }
+
+    pub fn del_proposed_admin(env: &Env) {
+        env.storage().temporary().remove(&DataKey::ProposedAdmin);
     }
 
     // =========================================================================

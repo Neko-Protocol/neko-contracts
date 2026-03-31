@@ -60,6 +60,26 @@ impl Admin {
         admin.require_auth();
     }
 
+    /// Propose a new admin (step 1 of two-step transfer).
+    /// Current admin calls this — stores the proposal in temporary storage (7-day TTL).
+    /// If the proposed address never calls accept_admin(), the proposal expires automatically.
+    pub fn propose_admin(env: &Env, proposed: &Address) {
+        Self::require_admin(env);
+        Storage::set_proposed_admin(env, proposed);
+        Events::admin_proposed(env, proposed);
+    }
+
+    /// Accept a pending admin proposal (step 2 of two-step transfer).
+    /// The proposed address calls this to finalize the transfer.
+    pub fn accept_admin(env: &Env) {
+        let proposed = Storage::get_proposed_admin(env)
+            .unwrap_or_else(|| panic_with_error!(env, Error::NotAuthorized));
+        proposed.require_auth();
+        Storage::del_proposed_admin(env);
+        Storage::replace_admin(env, &proposed);
+        Events::admin_changed(env, &proposed);
+    }
+
     /// Set collateral factor for a token (7 decimals)
     /// asset_type: Rwa uses RWA oracle, Crypto uses Reflector oracle
     /// symbol: required for Crypto collateral (e.g. symbol_short!("USDC"))

@@ -58,6 +58,10 @@ pub const AUCTION_DURATION_BLOCKS: u32 = 200;
 #[allow(dead_code)]
 pub const AUCTION_MAX_BLOCKS: u32 = 500;
 
+/// Admin proposal TTL — 7 days in ledgers. Proposed admin must accept within this window.
+pub const PROPOSAL_TTL: u32 = ONE_DAY_LEDGERS * 7;
+pub const PROPOSAL_BUMP: u32 = PROPOSAL_TTL + ONE_DAY_LEDGERS;
+
 /// Auction temporary storage TTL — 7 days in ledgers.
 /// Auctions that are never filled auto-expire after this window (Blend v2 pattern).
 pub const AUCTION_TTL: u32 = ONE_DAY_LEDGERS * 7;
@@ -506,7 +510,9 @@ pub enum DataKey {
     BackstopTotal,
     BackstopQueuedTotal,
 
-    // ---- Temporary storage (auto-expires, AUCTION_TTL) ----
+    // ---- Temporary storage (auto-expires) ----
     // Unfilled auctions are garbage-collected automatically by Soroban.
     Auction(u32),
+    // Pending admin proposal — expires after PROPOSAL_TTL if not accepted.
+    ProposedAdmin,
 }

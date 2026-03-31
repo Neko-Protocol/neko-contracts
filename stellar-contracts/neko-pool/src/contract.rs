@@ -138,6 +138,17 @@ impl LendingContract {
         Admin::upgrade(&env, &new_wasm_hash);
     }
 
+    /// Step 1 of admin transfer: current admin proposes a new admin address.
+    /// The proposal is stored in temporary storage and expires after 7 days.
+    pub fn propose_admin(env: Env, proposed: Address) {
+        Admin::propose_admin(&env, &proposed);
+    }
+
+    /// Step 2 of admin transfer: proposed address accepts and becomes the new admin.
+    pub fn accept_admin(env: Env) {
+        Admin::accept_admin(&env);
+    }
+
     // ========== Lending Functions (bTokens) ==========
 
     /// Deposit crypto asset to the pool
