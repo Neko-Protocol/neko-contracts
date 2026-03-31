@@ -28,6 +28,19 @@ impl Lending {
             return Err(Error::PoolFrozen);
         }
 
+        // Check reserve is enabled and supply cap
+        if let Some(params) = Storage::get_interest_rate_params(env, asset) {
+            if !params.enabled {
+                return Err(Error::ReserveDisabled);
+            }
+            if params.supply_cap > 0 {
+                let current_balance = Storage::get_pool_balance(env, asset);
+                if current_balance + amount > params.supply_cap {
+                    return Err(Error::SupplyCapExceeded);
+                }
+            }
+        }
+
         // Accrue interest before deposit
         Interest::accrue_interest(env, asset)?;
 

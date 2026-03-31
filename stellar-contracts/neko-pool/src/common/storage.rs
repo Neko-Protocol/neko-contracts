@@ -2,9 +2,9 @@ use soroban_sdk::{Address, Env, Map, Symbol, panic_with_error};
 
 use crate::common::error::Error;
 use crate::common::types::{
-    AssetType, AuctionData, BackstopDeposit, CDP, DataKey, INSTANCE_BUMP, INSTANCE_TTL,
-    InterestRateParams, PoolState, ReserveData, SHARED_BUMP, SHARED_TTL, USER_BUMP, USER_TTL,
-    UserAssetKey,
+    AssetType, AuctionData, BackstopDeposit, CDP, DataKey, AUCTION_BUMP, AUCTION_TTL,
+    INSTANCE_BUMP, INSTANCE_TTL, InterestRateParams, PoolState, ReserveData, SHARED_BUMP,
+    SHARED_TTL, USER_BUMP, USER_TTL, UserAssetKey,
 };
 
 /// Storage operations for the lending pool.
@@ -548,25 +548,31 @@ impl Storage {
     }
 
     // =========================================================================
-    // Auctions (persistent, per auction id)
+    // Auctions (temporary storage — auto-expires after AUCTION_TTL if not filled)
+    // Using temporary storage matches Blend v2: unfilled auctions are garbage-collected
+    // by Soroban automatically, preventing stale auction accumulation.
     // =========================================================================
 
     pub fn get_auction(env: &Env, id: u32) -> Option<AuctionData> {
         let key = DataKey::Auction(id);
-        let val: Option<AuctionData> = env.storage().persistent().get(&key);
+        let val: Option<AuctionData> = env.storage().temporary().get(&key);
         if val.is_some() {
-            Self::extend_shared_ttl(env, &key);
+            env.storage()
+                .temporary()
+                .extend_ttl(&key, AUCTION_TTL, AUCTION_BUMP);
         }
         val
     }
 
     pub fn set_auction(env: &Env, id: u32, auction: &AuctionData) {
         let key = DataKey::Auction(id);
-        env.storage().persistent().set(&key, auction);
-        Self::extend_shared_ttl(env, &key);
+        env.storage().temporary().set(&key, auction);
+        env.storage()
+            .temporary()
+            .extend_ttl(&key, AUCTION_TTL, AUCTION_BUMP);
     }
 
     pub fn del_auction(env: &Env, id: u32) {
-        env.storage().persistent().remove(&DataKey::Auction(id));
+        env.storage().temporary().remove(&DataKey::Auction(id));
     }
 }

@@ -423,6 +423,9 @@ impl Interest {
             r_two: 5_000_000,       // 50%
             r_three: 15_000_000,    // 150%
             reactivity: 200,        // 0.00002
+            l_factor: 10_000_000,   // 1.0 (no scaling)
+            supply_cap: 0,          // unlimited
+            enabled: true,
         }
     }
 }

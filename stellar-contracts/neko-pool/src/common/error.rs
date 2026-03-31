@@ -19,6 +19,8 @@ pub enum Error {
     PoolOnIce = 11,
     InsufficientPoolBalance = 12,
     InsufficientLiquidity = 13,
+    ReserveDisabled = 14,
+    SupplyCapExceeded = 15,
 
     // Lending errors
     InsufficientBTokenBalance = 20,

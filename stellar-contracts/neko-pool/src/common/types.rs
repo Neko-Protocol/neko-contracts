@@ -58,6 +58,11 @@ pub const AUCTION_DURATION_BLOCKS: u32 = 200;
 #[allow(dead_code)]
 pub const AUCTION_MAX_BLOCKS: u32 = 500;
 
+/// Auction temporary storage TTL — 7 days in ledgers.
+/// Auctions that are never filled auto-expire after this window (Blend v2 pattern).
+pub const AUCTION_TTL: u32 = ONE_DAY_LEDGERS * 7;
+pub const AUCTION_BUMP: u32 = AUCTION_TTL + ONE_DAY_LEDGERS;
+
 // ============================================================================
 // FEE CONSTANTS (7 decimals)
 // ============================================================================
@@ -156,6 +161,18 @@ pub struct InterestRateParams {
 
     /// Reactivity constant for rate modifier adjustment (7 decimals)
     pub reactivity: u32,
+
+    /// Liability factor (7 decimals, e.g. 8_000_000 = 80%)
+    /// Applied to debt when computing health factor and borrow limits:
+    ///   effective_debt = debt_usd * SCALAR_7 / l_factor
+    /// Lower l_factor → stricter (debt counts as larger). Default: SCALAR_7 (1.0 = no change).
+    pub l_factor: u32,
+
+    /// Maximum underlying tokens the reserve can hold (0 = unlimited)
+    pub supply_cap: i128,
+
+    /// Whether this reserve accepts new deposits and borrows
+    pub enabled: bool,
 }
 
 // ============================================================================
@@ -488,5 +505,8 @@ pub enum DataKey {
     // ---- Persistent storage (global mutable, SHARED_TTL) ----
     BackstopTotal,
     BackstopQueuedTotal,
+
+    // ---- Temporary storage (auto-expires, AUCTION_TTL) ----
+    // Unfilled auctions are garbage-collected automatically by Soroban.
     Auction(u32),
 }

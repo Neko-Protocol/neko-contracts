@@ -31,6 +31,16 @@ impl Borrowing {
             return Err(Error::PoolOnIce);
         }
 
+        // Check reserve is enabled and capture l_factor
+        let l_factor = if let Some(params) = Storage::get_interest_rate_params(env, asset) {
+            if !params.enabled {
+                return Err(Error::ReserveDisabled);
+            }
+            params.l_factor as i128
+        } else {
+            SCALAR_7
+        };
+
         // Accrue interest before borrow
         Interest::accrue_interest(env, asset)?;
 
@@ -51,37 +61,22 @@ impl Borrowing {
             return Err(Error::DebtAssetAlreadySet);
         }
 
-        // Calculate borrow limit
+        // Calculate borrow limit (already accounts for effective current debt via l_factor)
         let borrow_limit = Self::calculate_borrow_limit(env, borrower)?;
 
-        // Fetch asset price once — reused for both current debt and new debt calculations
+        // Fetch asset price for new debt value calculation
         let (asset_price, price_decimals) = Oracles::get_price_for_lending_asset(env, asset)?;
 
-        // Get current debt value
-        let current_debt_value = if cdp.d_tokens > 0 {
-            let d_token_rate = Storage::get_d_token_rate(env, asset);
-            let debt_amount = cdp
-                .d_tokens
-                .checked_mul(d_token_rate)
-                .ok_or(Error::ArithmeticError)?
-                .checked_div(SCALAR_12)
-                .ok_or(Error::ArithmeticError)?;
-
-            // Calculate debt value in USD (_asset_decimals unused in calculate_usd_value)
-            Oracles::calculate_usd_value(env, debt_amount, asset_price, 0, price_decimals)?
-        } else {
-            0
-        };
-
-        // Calculate new debt value
+        // Calculate new debt value in effective terms (applying l_factor)
         let new_debt_value =
             Oracles::calculate_usd_value(env, amount, asset_price, 0, price_decimals)?;
-
-        let total_debt_value = current_debt_value
-            .checked_add(new_debt_value)
+        let effective_new_debt = new_debt_value
+            .checked_mul(SCALAR_7)
+            .ok_or(Error::ArithmeticError)?
+            .checked_div(l_factor)
             .ok_or(Error::ArithmeticError)?;
 
-        if total_debt_value > borrow_limit {
+        if effective_new_debt > borrow_limit {
             return Err(Error::InsufficientBorrowLimit);
         }
 
@@ -285,7 +280,7 @@ impl Borrowing {
 
         // Get current debt
         let cdp = Storage::get_cdp(env, borrower);
-        let current_debt_value = if let Some(cdp) = cdp {
+        let (current_debt_value, l_factor) = if let Some(cdp) = cdp {
             if let Some(debt_asset) = &cdp.debt_asset {
                 if cdp.d_tokens > 0 {
                     let d_token_rate = Storage::get_d_token_rate(env, debt_asset);
@@ -301,26 +296,40 @@ impl Borrowing {
                         Oracles::get_price_for_lending_asset(env, debt_asset)?;
 
                     // Calculate debt value in USD (_asset_decimals unused in calculate_usd_value)
-                    Oracles::calculate_usd_value(
+                    let debt_usd = Oracles::calculate_usd_value(
                         env,
                         debt_amount,
                         debt_price,
                         0,
                         price_decimals,
-                    )?
+                    )?;
+
+                    let lf = Storage::get_interest_rate_params(env, debt_asset)
+                        .map(|p| p.l_factor as i128)
+                        .unwrap_or(SCALAR_7);
+
+                    (debt_usd, lf)
                 } else {
-                    0
+                    (0, SCALAR_7)
                 }
             } else {
-                0
+                (0, SCALAR_7)
             }
         } else {
-            0
+            (0, SCALAR_7)
         };
 
-        // Borrow Limit = TotalCollateralValue - CurrentDebtValue
+        // Apply l_factor: effective_debt = debt_usd * SCALAR_7 / l_factor
+        // Lower l_factor → larger effective_debt → stricter borrow limit
+        let effective_debt = current_debt_value
+            .checked_mul(SCALAR_7)
+            .ok_or(Error::ArithmeticError)?
+            .checked_div(l_factor)
+            .ok_or(Error::ArithmeticError)?;
+
+        // Borrow Limit = TotalCollateralValue - EffectiveDebt
         let borrow_limit = total_collateral_value
-            .checked_sub(current_debt_value)
+            .checked_sub(effective_debt)
             .ok_or(Error::ArithmeticError)?;
 
         Ok(borrow_limit.max(0))

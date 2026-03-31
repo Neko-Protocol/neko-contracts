@@ -391,12 +391,27 @@ impl Liquidations {
             return Ok(u32::MAX);
         }
 
-        // Health Factor = (CollateralValue × CollateralFactor) / DebtValue
-        // With 7 decimals: HF = (total_collateral_value * SCALAR_7) / total_debt_value
+        // Apply l_factor: effective_debt = debt_usd * SCALAR_7 / l_factor
+        // Lower l_factor → larger effective_debt → stricter health factor
+        let l_factor = if let Some(debt_asset) = &cdp.debt_asset {
+            Storage::get_interest_rate_params(env, debt_asset)
+                .map(|p| p.l_factor as i128)
+                .unwrap_or(SCALAR_7)
+        } else {
+            SCALAR_7
+        };
+        let effective_debt = total_debt_value
+            .checked_mul(SCALAR_7)
+            .ok_or(Error::ArithmeticError)?
+            .checked_div(l_factor)
+            .ok_or(Error::ArithmeticError)?;
+
+        // Health Factor = (CollateralValue × CollateralFactor) / EffectiveDebt
+        // With 7 decimals: HF = (total_collateral_value * SCALAR_7) / effective_debt
         let health_factor = total_collateral_value
             .checked_mul(SCALAR_7)
             .ok_or(Error::ArithmeticError)?
-            .checked_div(total_debt_value)
+            .checked_div(effective_debt)
             .ok_or(Error::ArithmeticError)?;
 
         // Cap at u32::MAX
