@@ -58,6 +58,13 @@ pub const AUCTION_DURATION_BLOCKS: u32 = 200;
 #[allow(dead_code)]
 pub const AUCTION_MAX_BLOCKS: u32 = 500;
 
+/// Config change timelock — 7 days in seconds. Reserve param changes must wait this long.
+pub const CONFIG_DELAY_SECONDS: u64 = 7 * 24 * 60 * 60;
+
+/// Queued config TTL — 14 days in ledgers. Auto-expires if admin never applies it.
+pub const QUEUED_CONFIG_TTL: u32 = ONE_DAY_LEDGERS * 14;
+pub const QUEUED_CONFIG_BUMP: u32 = QUEUED_CONFIG_TTL + ONE_DAY_LEDGERS;
+
 /// Admin proposal TTL — 7 days in ledgers. Proposed admin must accept within this window.
 pub const PROPOSAL_TTL: u32 = ONE_DAY_LEDGERS * 7;
 pub const PROPOSAL_BUMP: u32 = PROPOSAL_TTL + ONE_DAY_LEDGERS;
@@ -177,6 +184,16 @@ pub struct InterestRateParams {
 
     /// Whether this reserve accepts new deposits and borrows
     pub enabled: bool,
+}
+
+/// A queued change to a reserve's interest rate parameters.
+/// Stored in temporary storage; applies only after unlock_time has passed.
+#[contracttype]
+#[derive(Clone, Debug)]
+pub struct QueuedReserveConfig {
+    pub new_params: InterestRateParams,
+    /// Unix timestamp after which the change can be applied
+    pub unlock_time: u64,
 }
 
 // ============================================================================
@@ -515,4 +532,6 @@ pub enum DataKey {
     Auction(u32),
     // Pending admin proposal — expires after PROPOSAL_TTL if not accepted.
     ProposedAdmin,
+    // Queued reserve config change — expires after QUEUED_CONFIG_TTL if never applied.
+    QueuedReserveConfig(Symbol),
 }

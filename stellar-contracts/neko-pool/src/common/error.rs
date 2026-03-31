@@ -18,23 +18,18 @@ pub enum Error {
     PoolFrozen = 10,
     PoolOnIce = 11,
     InsufficientPoolBalance = 12,
-    InsufficientLiquidity = 13,
     ReserveDisabled = 14,
     SupplyCapExceeded = 15,
 
     // Lending errors
     InsufficientBTokenBalance = 20,
-    InsufficientDepositAmount = 21,
-    InsufficientWithdrawalBalance = 22,
 
     // Borrowing errors
     InsufficientCollateral = 30,
     InsufficientBorrowLimit = 31,
     DebtAssetAlreadySet = 32,
     DebtAssetNotSet = 33,
-    CannotSwitchDebtAsset = 34,
     InsufficientDTokenBalance = 35,
-    InsufficientDebtToRepay = 36,
 
     // Collateral errors
     CollateralNotFound = 40,
@@ -77,4 +72,9 @@ pub enum Error {
     // Treasury errors
     TreasuryNotSet = 85,
     NoTreasuryFeesToCollect = 86,
+
+    // Config queue errors
+    ConfigNotUnlocked = 87,
+    ConfigQueueNotFound = 88,
+    ConfigAlreadyQueued = 89,
 }

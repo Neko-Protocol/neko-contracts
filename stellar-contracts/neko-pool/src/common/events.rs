@@ -120,6 +120,22 @@ pub struct LiquidationFeeEvent {
 }
 
 #[contractevent]
+pub struct ReserveConfigQueuedEvent {
+    pub asset: Symbol,
+    pub unlock_time: u64,
+}
+
+#[contractevent]
+pub struct ReserveConfigAppliedEvent {
+    pub asset: Symbol,
+}
+
+#[contractevent]
+pub struct ReserveConfigCancelledEvent {
+    pub asset: Symbol,
+}
+
+#[contractevent]
 pub struct AdminProposedEvent {
     pub proposed: Address,
 }
@@ -365,6 +381,28 @@ impl Events {
             asset: asset.clone(),
             interest_received,
             backstop_paid,
+        }
+        .publish(env);
+    }
+
+    pub fn reserve_config_queued(env: &soroban_sdk::Env, asset: &Symbol, unlock_time: u64) {
+        ReserveConfigQueuedEvent {
+            asset: asset.clone(),
+            unlock_time,
+        }
+        .publish(env);
+    }
+
+    pub fn reserve_config_applied(env: &soroban_sdk::Env, asset: &Symbol) {
+        ReserveConfigAppliedEvent {
+            asset: asset.clone(),
+        }
+        .publish(env);
+    }
+
+    pub fn reserve_config_cancelled(env: &soroban_sdk::Env, asset: &Symbol) {
+        ReserveConfigCancelledEvent {
+            asset: asset.clone(),
         }
         .publish(env);
     }

@@ -137,7 +137,8 @@ fn test_set_interest_rate_params() {
     let usdc = symbol_short!("USDC");
     let params = default_interest_params();
 
-    client.set_interest_rate_params(&usdc, &params);
+    client.queue_set_reserve_params(&usdc, &params);
+    client.apply_queued_reserve_params(&usdc);
 }
 
 #[test]
@@ -190,12 +191,14 @@ fn test_pool_balance() {
 
     let client = create_lending_contract(&env, admin.clone(), neko_oracle, reflector_oracle);
 
-    // Set pool to Active
-    client.set_pool_state(&PoolState::Active);
-
     let usdc = symbol_short!("USDC");
 
-    client.set_interest_rate_params(&usdc, &default_interest_params());
+    // Queue and apply params while pool is still OnIce (no timelock)
+    client.queue_set_reserve_params(&usdc, &default_interest_params());
+    client.apply_queued_reserve_params(&usdc);
+
+    // Set pool to Active
+    client.set_pool_state(&PoolState::Active);
 
     // Note: In a real test, you'd need to create token contracts and transfer tokens
     // For now, we just test that the function exists and pool balance is accessible
@@ -215,7 +218,8 @@ fn test_b_token_rate() {
 
     let usdc = symbol_short!("USDC");
 
-    client.set_interest_rate_params(&usdc, &default_interest_params());
+    client.queue_set_reserve_params(&usdc, &default_interest_params());
+    client.apply_queued_reserve_params(&usdc);
 
     // Initial rate should be 1:1 (1e12 = SCALAR_12)
     let initial_rate = client.get_b_token_rate(&usdc);
@@ -234,7 +238,8 @@ fn test_d_token_rate() {
 
     let usdc = symbol_short!("USDC");
 
-    client.set_interest_rate_params(&usdc, &default_interest_params());
+    client.queue_set_reserve_params(&usdc, &default_interest_params());
+    client.apply_queued_reserve_params(&usdc);
 
     // Initial rate should be 1:1 (1e12 = SCALAR_12)
     let initial_rate = client.get_d_token_rate(&usdc);
@@ -253,7 +258,8 @@ fn test_b_token_supply() {
 
     let usdc = symbol_short!("USDC");
 
-    client.set_interest_rate_params(&usdc, &default_interest_params());
+    client.queue_set_reserve_params(&usdc, &default_interest_params());
+    client.apply_queued_reserve_params(&usdc);
 
     // Initial supply should be zero
     let initial_supply = client.get_b_token_supply(&usdc);
@@ -289,7 +295,8 @@ fn test_accumulated_interest_initial() {
     let client = create_lending_contract(&env, admin.clone(), neko_oracle, reflector_oracle);
 
     let usdc = symbol_short!("USDC");
-    client.set_interest_rate_params(&usdc, &default_interest_params());
+    client.queue_set_reserve_params(&usdc, &default_interest_params());
+    client.apply_queued_reserve_params(&usdc);
 
     // Initial accumulated interest should be zero
     let accumulated = client.get_accumulated_interest(&usdc);
@@ -307,7 +314,8 @@ fn test_can_create_interest_auction_no_interest() {
     let client = create_lending_contract(&env, admin.clone(), neko_oracle, reflector_oracle);
 
     let usdc = symbol_short!("USDC");
-    client.set_interest_rate_params(&usdc, &default_interest_params());
+    client.queue_set_reserve_params(&usdc, &default_interest_params());
+    client.apply_queued_reserve_params(&usdc);
 
     // Should not be able to create auction without enough accumulated interest
     let can_create = client.can_create_interest_auction(&usdc);
@@ -326,7 +334,8 @@ fn test_create_interest_auction_insufficient_interest() {
     let client = create_lending_contract(&env, admin.clone(), neko_oracle, reflector_oracle);
 
     let usdc = symbol_short!("USDC");
-    client.set_interest_rate_params(&usdc, &default_interest_params());
+    client.queue_set_reserve_params(&usdc, &default_interest_params());
+    client.apply_queued_reserve_params(&usdc);
 
     // Try to create interest auction without enough interest - should panic
     client.create_interest_auction(&usdc);

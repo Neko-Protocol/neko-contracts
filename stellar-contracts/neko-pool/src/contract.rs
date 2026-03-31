@@ -61,9 +61,20 @@ impl LendingContract {
         Admin::set_collateral_factor(&env, &token, factor, asset_type, symbol);
     }
 
-    /// Set interest rate parameters for an asset
-    pub fn set_interest_rate_params(env: Env, asset: Symbol, params: InterestRateParams) {
-        Admin::set_interest_rate_params(&env, &asset, &params);
+    /// Queue a change to reserve interest rate parameters (step 1).
+    /// 7-day timelock unless pool is OnIce.
+    pub fn queue_set_reserve_params(env: Env, asset: Symbol, params: InterestRateParams) {
+        Admin::queue_set_reserve_params(&env, &asset, &params);
+    }
+
+    /// Apply a queued reserve param change after the timelock expires (step 2).
+    pub fn apply_queued_reserve_params(env: Env, asset: Symbol) {
+        Admin::apply_queued_reserve_params(&env, &asset);
+    }
+
+    /// Cancel a queued reserve param change before it is applied.
+    pub fn cancel_queued_reserve_params(env: Env, asset: Symbol) {
+        Admin::cancel_queued_reserve_params(&env, &asset);
     }
 
     /// Set pool state

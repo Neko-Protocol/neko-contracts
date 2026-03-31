@@ -3,7 +3,9 @@ use soroban_sdk::{Address, Env, Symbol, panic_with_error, token::TokenClient};
 use crate::common::error::Error;
 use crate::common::events::Events;
 use crate::common::storage::Storage;
-use crate::common::types::{AssetType, InterestRateParams, PoolState, SCALAR_7};
+use crate::common::types::{
+    AssetType, CONFIG_DELAY_SECONDS, InterestRateParams, PoolState, QueuedReserveConfig, SCALAR_7,
+};
 
 /// Administrative functions for the lending pool
 pub struct Admin;
@@ -108,22 +110,68 @@ impl Admin {
         Storage::get_collateral_factor(env, token).unwrap_or(7_500_000) // Default: 75% (7 decimals)
     }
 
-    /// Set interest rate parameters for an asset
-    pub fn set_interest_rate_params(env: &Env, asset: &Symbol, params: &InterestRateParams) {
+    /// Queue a change to reserve interest rate parameters (step 1 of two-step config change).
+    ///
+    /// If the pool is OnIce (initial setup), the change is immediately applicable (unlock_time = now).
+    /// Otherwise, a 7-day timelock is enforced so users can react before risk params change.
+    pub fn queue_set_reserve_params(env: &Env, asset: &Symbol, params: &InterestRateParams) {
         Self::require_admin(env);
 
-        // Validate parameters (7 decimals)
-        // target_util should be <= 95% (9_500_000)
+        // Cannot queue if there is already a pending queue for this asset
+        if Storage::get_queued_reserve_config(env, asset).is_some() {
+            panic_with_error!(env, Error::ConfigAlreadyQueued);
+        }
+
+        // Validate parameters
         if params.target_util > 9_500_000 {
             panic_with_error!(env, Error::InvalidInterestRateParams);
         }
-
-        // max_util should be > target_util and <= 100%
         if params.max_util <= params.target_util || params.max_util > SCALAR_7 as u32 {
             panic_with_error!(env, Error::InvalidInterestRateParams);
         }
 
-        Storage::set_interest_rate_params(env, asset, params);
+        // If pool is OnIce (initial setup), apply immediately; otherwise enforce timelock
+        let pool_state = Storage::get_pool_state(env);
+        let unlock_time = if matches!(pool_state, PoolState::OnIce) {
+            env.ledger().timestamp()
+        } else {
+            env.ledger().timestamp() + CONFIG_DELAY_SECONDS
+        };
+
+        Storage::set_queued_reserve_config(
+            env,
+            asset,
+            &QueuedReserveConfig {
+                new_params: params.clone(),
+                unlock_time,
+            },
+        );
+
+        Events::reserve_config_queued(env, asset, unlock_time);
+    }
+
+    /// Apply a queued reserve param change (step 2 of two-step config change).
+    /// Panics if no change is queued or if the timelock has not expired.
+    pub fn apply_queued_reserve_params(env: &Env, asset: &Symbol) {
+        Self::require_admin(env);
+
+        let queued = Storage::get_queued_reserve_config(env, asset)
+            .unwrap_or_else(|| panic_with_error!(env, Error::ConfigQueueNotFound));
+
+        if queued.unlock_time > env.ledger().timestamp() {
+            panic_with_error!(env, Error::ConfigNotUnlocked);
+        }
+
+        Storage::del_queued_reserve_config(env, asset);
+        Storage::set_interest_rate_params(env, asset, &queued.new_params);
+        Events::reserve_config_applied(env, asset);
+    }
+
+    /// Cancel a queued reserve param change before it is applied.
+    pub fn cancel_queued_reserve_params(env: &Env, asset: &Symbol) {
+        Self::require_admin(env);
+        Storage::del_queued_reserve_config(env, asset);
+        Events::reserve_config_cancelled(env, asset);
     }
 
     /// Set pool state

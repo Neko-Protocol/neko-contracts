@@ -4,7 +4,8 @@ use crate::common::error::Error;
 use crate::common::types::{
     AssetType, AuctionData, BackstopDeposit, CDP, DataKey, AUCTION_BUMP, AUCTION_TTL,
     INSTANCE_BUMP, INSTANCE_TTL, InterestRateParams, PoolState, PROPOSAL_BUMP, PROPOSAL_TTL,
-    ReserveData, SHARED_BUMP, SHARED_TTL, USER_BUMP, USER_TTL, UserAssetKey,
+    QUEUED_CONFIG_BUMP, QUEUED_CONFIG_TTL, QueuedReserveConfig, ReserveData, SHARED_BUMP,
+    SHARED_TTL, USER_BUMP, USER_TTL, UserAssetKey,
 };
 
 /// Storage operations for the lending pool.
@@ -369,6 +370,33 @@ impl Storage {
         let key = DataKey::InterestRateParams(asset.clone());
         env.storage().persistent().set(&key, params);
         Self::extend_shared_ttl(env, &key);
+    }
+
+    pub fn get_queued_reserve_config(
+        env: &Env,
+        asset: &Symbol,
+    ) -> Option<QueuedReserveConfig> {
+        env.storage()
+            .temporary()
+            .get(&DataKey::QueuedReserveConfig(asset.clone()))
+    }
+
+    pub fn set_queued_reserve_config(
+        env: &Env,
+        asset: &Symbol,
+        queued: &QueuedReserveConfig,
+    ) {
+        let key = DataKey::QueuedReserveConfig(asset.clone());
+        env.storage().temporary().set(&key, queued);
+        env.storage()
+            .temporary()
+            .extend_ttl(&key, QUEUED_CONFIG_TTL, QUEUED_CONFIG_BUMP);
+    }
+
+    pub fn del_queued_reserve_config(env: &Env, asset: &Symbol) {
+        env.storage()
+            .temporary()
+            .remove(&DataKey::QueuedReserveConfig(asset.clone()));
     }
 
     // Convenience wrappers used by interest accrual
