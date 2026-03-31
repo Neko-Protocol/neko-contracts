@@ -428,10 +428,77 @@ pub mod rounding {
 }
 
 // ============================================================================
+// SHARED STORAGE TTL (reserve data, pool balances, auctions)
+// ============================================================================
+
+pub const SHARED_TTL: u32 = ONE_DAY_LEDGERS * 45;
+pub const SHARED_BUMP: u32 = ONE_DAY_LEDGERS * 46;
+
+// ============================================================================
+// COMPOSITE KEY STRUCTS
+// ============================================================================
+
+/// Key for per-user per-asset data (bTokens, dTokens)
+#[contracttype]
+#[derive(Clone)]
+pub struct UserAssetKey {
+    pub user: Address,
+    pub asset: Symbol,
+}
+
+/// Key for per-user per-token data (collateral)
+#[contracttype]
+#[derive(Clone)]
+pub struct UserTokenKey {
+    pub user: Address,
+    pub token: Address,
+}
+
+// ============================================================================
 // STORAGE KEYS
 // ============================================================================
 
-pub use soroban_sdk::symbol_short;
+/// Typed storage keys for the lending pool.
+///
+/// Layout:
+/// - Instance storage  : config fields (Admin, PoolState, fee rates, oracles, static maps)
+/// - Persistent SHARED : per-asset data (PoolBalance, ReserveData, Auction, BackstopTotal…)
+/// - Persistent USER   : per-user data (BTokenBalance, DTokenBalance, Collateral, Cdp, BackstopDeposit)
+#[contracttype]
+#[derive(Clone)]
+pub enum DataKey {
+    // ---- Instance storage (lean config) ----
+    Admin,
+    PoolState,
+    NekoOracle,
+    ReflectorOracle,
+    BackstopToken,
+    BackstopThreshold,
+    BackstopTakeRate,
+    Treasury,
+    ReserveFactor,
+    OriginationFeeRate,
+    LiquidationFeeRate,
+    TokenContracts,       // Map<Symbol, Address>
+    AssetTypes,           // Map<Symbol, AssetType>
+    CollateralAssetTypes, // Map<Address, AssetType>
+    CollateralSymbols,    // Map<Address, Symbol>
+    CollateralFactors,    // Map<Address, u32>
 
-pub const STORAGE: Symbol = symbol_short!("STORAGE");
-pub const ADMIN_KEY: Symbol = symbol_short!("ADMIN");
+    // ---- Persistent storage (per asset, SHARED_TTL) ----
+    PoolBalance(Symbol),
+    ReserveData(Symbol),
+    InterestRateParams(Symbol),
+
+    // ---- Persistent storage (per user, USER_TTL) ----
+    BTokenBalance(UserAssetKey),
+    DTokenBalance(UserAssetKey),
+    Collateral(UserTokenKey),
+    Cdp(Address),
+    BackstopDeposit(Address),
+
+    // ---- Persistent storage (global mutable, SHARED_TTL) ----
+    BackstopTotal,
+    WithdrawalQueue,
+    Auction(u32),
+}

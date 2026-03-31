@@ -61,9 +61,7 @@ impl InterestAuction {
         };
 
         // Store auction
-        let mut storage = Storage::get(env);
-        storage.auction_data.set(auction_id, auction_data);
-        Storage::set(env, &storage);
+        Storage::set_auction(env, auction_id, &auction_data);
 
         // Emit event
         crate::common::events::Events::interest_auction_created(
@@ -100,11 +98,7 @@ impl InterestAuction {
             return Err(Error::InvalidFillPercent);
         }
 
-        let mut storage = Storage::get(env);
-        let auction = storage
-            .auction_data
-            .get(auction_id)
-            .ok_or(Error::AuctionNotFound)?;
+        let auction = Storage::get_auction(env, auction_id).ok_or(Error::AuctionNotFound)?;
 
         // Verify auction type
         if auction.auction_type != AuctionType::Interest {
@@ -149,11 +143,11 @@ impl InterestAuction {
 
         // Transfer backstop tokens from bidder to protocol
         if backstop_to_pay > 0 {
-            if let Some(backstop_token) = &storage.backstop_token {
-                let backstop_client = TokenClient::new(env, backstop_token);
-                backstop_client.transfer(bidder, env.current_contract_address(), &backstop_to_pay);
+            if let Some(backstop_token) = Storage::get_backstop_token(env) {
+                let backstop_client = TokenClient::new(env, &backstop_token);
+                backstop_client.transfer(bidder, &env.current_contract_address(), &backstop_to_pay);
             }
-            storage.backstop_total += backstop_to_pay;
+            Storage::set_backstop_total(env, Storage::get_backstop_total(env) + backstop_to_pay);
         }
 
         // Transfer interest to bidder
@@ -177,15 +171,13 @@ impl InterestAuction {
         let remaining_interest = total_interest - interest_to_receive;
         if remaining_interest <= 0 {
             // Auction complete
-            storage.auction_data.remove(auction_id);
+            Storage::del_auction(env, auction_id);
         } else {
             // Update remaining lot
             let mut updated_auction = auction.clone();
             updated_auction.lot.set(token_address, remaining_interest);
-            storage.auction_data.set(auction_id, updated_auction);
+            Storage::set_auction(env, auction_id, &updated_auction);
         }
-
-        Storage::set(env, &storage);
 
         // Emit event
         crate::common::events::Events::interest_auction_filled(

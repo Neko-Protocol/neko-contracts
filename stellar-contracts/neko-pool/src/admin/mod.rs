@@ -1,4 +1,4 @@
-use soroban_sdk::{Address, Env, Map, Symbol, Vec, panic_with_error, token::TokenClient};
+use soroban_sdk::{Address, Env, Symbol, panic_with_error, token::TokenClient};
 
 use crate::common::error::Error;
 use crate::common::events::Events;
@@ -38,56 +38,15 @@ impl Admin {
         }
 
         Storage::set_admin(env, admin);
-
-        // Initialize pool storage with default values
-        let storage = crate::common::storage::PoolStorage {
-            pool_state: PoolState::OnIce, // Pools start on ice
-            pool_balances: Map::new(env),
-
-            // Reserve data
-            reserve_data: Map::new(env),
-
-            // User balances
-            b_token_balances: Map::new(env),
-            d_token_balances: Map::new(env),
-            collateral: Map::new(env),
-
-            // Interest rate parameters
-            interest_rate_params: Map::new(env),
-
-            // Auctions (unified structure)
-            auction_data: Map::new(env),
-
-            // Backstop
-            backstop_deposits: Map::new(env),
-            backstop_total: 0,
-            backstop_threshold,
-            backstop_take_rate,
-            withdrawal_queue: Vec::new(env),
-            backstop_token: None,
-
-            // Treasury & Fees
-            treasury: treasury.clone(),
-            reserve_factor,
-            origination_fee_rate,
-            liquidation_fee_rate,
-
-            // Oracles
-            neko_oracle: neko_oracle.clone(),
-            reflector_oracle: reflector_oracle.clone(),
-
-            // Admin
-            admin: admin.clone(),
-            collateral_factors: Map::new(env),
-            token_contracts: Map::new(env),
-
-            // Asset type routing
-            asset_types: Map::new(env),
-            collateral_asset_types: Map::new(env),
-            collateral_symbols: Map::new(env),
-        };
-
-        Storage::set(env, &storage);
+        Storage::set_pool_state(env, PoolState::OnIce);
+        Storage::set_neko_oracle(env, neko_oracle);
+        Storage::set_reflector_oracle(env, reflector_oracle);
+        Storage::set_backstop_threshold(env, backstop_threshold);
+        Storage::set_backstop_take_rate(env, backstop_take_rate);
+        Storage::set_treasury(env, treasury);
+        Storage::set_reserve_factor(env, reserve_factor);
+        Storage::set_origination_fee_rate(env, origination_fee_rate);
+        Storage::set_liquidation_fee_rate(env, liquidation_fee_rate);
     }
 
     /// Get the admin address
@@ -119,21 +78,14 @@ impl Admin {
             panic_with_error!(env, Error::InvalidCollateralFactor);
         }
 
-        let mut storage = Storage::get(env);
-        storage.collateral_factors.set(token.clone(), factor);
-        Storage::set(env, &storage);
-
+        Storage::set_collateral_factor(env, token, factor);
         Storage::set_collateral_asset_type(env, token, asset_type);
         Storage::set_collateral_symbol(env, token, symbol);
     }
 
     /// Get collateral factor for a token (7 decimals)
     pub fn get_collateral_factor(env: &Env, token: &Address) -> u32 {
-        let storage = Storage::get(env);
-        storage
-            .collateral_factors
-            .get(token.clone())
-            .unwrap_or(7_500_000) // Default: 75% (7 decimals)
+        Storage::get_collateral_factor(env, token).unwrap_or(7_500_000) // Default: 75% (7 decimals)
     }
 
     /// Set interest rate parameters for an asset
@@ -151,35 +103,24 @@ impl Admin {
             panic_with_error!(env, Error::InvalidInterestRateParams);
         }
 
-        let mut storage = Storage::get(env);
-        storage
-            .interest_rate_params
-            .set(asset.clone(), params.clone());
-        Storage::set(env, &storage);
+        Storage::set_interest_rate_params(env, asset, params);
     }
 
     /// Set pool state
     pub fn set_pool_state(env: &Env, state: PoolState) {
         Self::require_admin(env);
-
-        let mut storage = Storage::get(env);
-        storage.pool_state = state;
-        Storage::set(env, &storage);
+        Storage::set_pool_state(env, state);
     }
 
     /// Get pool state
     pub fn get_pool_state(env: &Env) -> PoolState {
-        let storage = Storage::get(env);
-        storage.pool_state
+        Storage::get_pool_state(env)
     }
 
     /// Set backstop threshold
     pub fn set_backstop_threshold(env: &Env, threshold: i128) {
         Self::require_admin(env);
-
-        let mut storage = Storage::get(env);
-        storage.backstop_threshold = threshold;
-        Storage::set(env, &storage);
+        Storage::set_backstop_threshold(env, threshold);
     }
 
     /// Set backstop take rate (7 decimals)
@@ -191,9 +132,7 @@ impl Admin {
             panic_with_error!(env, Error::InvalidInterestRateParams);
         }
 
-        let mut storage = Storage::get(env);
-        storage.backstop_take_rate = take_rate;
-        Storage::set(env, &storage);
+        Storage::set_backstop_take_rate(env, take_rate);
     }
 
     /// Set token contract address for an asset symbol
@@ -212,34 +151,28 @@ impl Admin {
     /// Set backstop token contract address
     pub fn set_backstop_token(env: &Env, token_address: &Address) {
         Self::require_admin(env);
-        let mut storage = Storage::get(env);
-        storage.backstop_token = Some(token_address.clone());
-        Storage::set(env, &storage);
+        Storage::set_backstop_token(env, token_address);
     }
 
     /// Set the treasury address
     pub fn set_treasury(env: &Env, treasury: &Address) {
         Self::require_admin(env);
-        let mut storage = Storage::get(env);
-        storage.treasury = treasury.clone();
-        Storage::set(env, &storage);
+        Storage::set_treasury(env, treasury);
     }
 
     /// Get the treasury address
     pub fn get_treasury(env: &Env) -> Address {
-        let storage = Storage::get(env);
-        storage.treasury
+        Storage::get_treasury(env)
     }
 
     /// Set reserve factor (7 decimals). Must not exceed SCALAR_7 - backstop_take_rate.
     pub fn set_reserve_factor(env: &Env, reserve_factor: u32) {
         Self::require_admin(env);
-        let mut storage = Storage::get(env);
-        if (reserve_factor as i128 + storage.backstop_take_rate as i128) > SCALAR_7 {
+        let backstop_take_rate = Storage::get_backstop_take_rate(env);
+        if (reserve_factor as i128 + backstop_take_rate as i128) > SCALAR_7 {
             panic_with_error!(env, Error::InvalidInterestRateParams);
         }
-        storage.reserve_factor = reserve_factor;
-        Storage::set(env, &storage);
+        Storage::set_reserve_factor(env, reserve_factor);
     }
 
     /// Set origination fee rate (7 decimals).
@@ -248,9 +181,7 @@ impl Admin {
         if origination_fee_rate as i128 > SCALAR_7 {
             panic_with_error!(env, Error::InvalidInterestRateParams);
         }
-        let mut storage = Storage::get(env);
-        storage.origination_fee_rate = origination_fee_rate;
-        Storage::set(env, &storage);
+        Storage::set_origination_fee_rate(env, origination_fee_rate);
     }
 
     /// Set liquidation fee rate (7 decimals).
@@ -259,9 +190,7 @@ impl Admin {
         if liquidation_fee_rate as i128 > SCALAR_7 {
             panic_with_error!(env, Error::InvalidInterestRateParams);
         }
-        let mut storage = Storage::get(env);
-        storage.liquidation_fee_rate = liquidation_fee_rate;
-        Storage::set(env, &storage);
+        Storage::set_liquidation_fee_rate(env, liquidation_fee_rate);
     }
 
     /// Collect accumulated treasury fees for an asset and transfer to treasury address.
@@ -275,8 +204,7 @@ impl Admin {
             return Err(Error::NoTreasuryFeesToCollect);
         }
 
-        let storage = Storage::get(env);
-        let treasury = storage.treasury.clone();
+        let treasury = Storage::get_treasury(env);
         let token_address =
             Storage::get_token_contract(env, asset).ok_or(Error::TokenContractNotSet)?;
 

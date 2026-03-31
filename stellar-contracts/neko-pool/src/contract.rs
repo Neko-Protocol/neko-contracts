@@ -284,8 +284,7 @@ impl LendingContract {
 
     /// Get backstop token contract address
     pub fn get_backstop_token(env: Env) -> Option<Address> {
-        let storage = Storage::get(&env);
-        storage.backstop_token
+        Storage::get_backstop_token(&env)
     }
 
     /// Get backstop deposit info for a depositor

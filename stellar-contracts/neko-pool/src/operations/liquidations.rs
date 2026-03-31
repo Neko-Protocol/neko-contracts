@@ -147,9 +147,7 @@ impl Liquidations {
         };
 
         // Store auction
-        let mut storage = Storage::get(env);
-        storage.auction_data.set(auction_id, auction);
-        Storage::set(env, &storage);
+        Storage::set_auction(env, auction_id, &auction);
 
         // Emit event
         crate::common::events::Events::liquidation_initiated(
@@ -169,11 +167,7 @@ impl Liquidations {
     pub fn fill_auction(env: &Env, auction_id: u32, liquidator: &Address) -> Result<(), Error> {
         liquidator.require_auth();
 
-        let mut storage = Storage::get(env);
-        let auction = storage
-            .auction_data
-            .get(auction_id)
-            .ok_or(Error::AuctionNotFound)?;
+        let auction = Storage::get_auction(env, auction_id).ok_or(Error::AuctionNotFound)?;
 
         // Verify it's a user liquidation auction
         if auction.auction_type != AuctionType::UserLiquidation {
@@ -219,10 +213,7 @@ impl Liquidations {
 
         // Calculate liquidation fee (1% of collateral goes to treasury)
         let neko_token_client = TokenClient::new(env, &neko_token);
-        let liquidation_fee_rate = {
-            let s = Storage::get(env);
-            s.liquidation_fee_rate as i128
-        };
+        let liquidation_fee_rate = Storage::get_liquidation_fee_rate(env) as i128;
         let liq_fee = collateral_received
             .checked_mul(liquidation_fee_rate)
             .ok_or(Error::ArithmeticError)?
@@ -241,7 +232,7 @@ impl Liquidations {
 
         // Transfer liquidation fee directly to treasury
         if liq_fee > 0 {
-            let treasury = Storage::get(env).treasury;
+            let treasury = Storage::get_treasury(env);
             neko_token_client.transfer(&env.current_contract_address(), &treasury, &liq_fee);
             crate::common::events::Events::liquidation_fee(env, &neko_token, liq_fee, &treasury);
         }
@@ -297,8 +288,7 @@ impl Liquidations {
         }
 
         // Remove auction (it's been filled)
-        storage.auction_data.remove(auction_id);
-        Storage::set(env, &storage);
+        Storage::del_auction(env, auction_id);
 
         // Emit event
         crate::common::events::Events::liquidation_filled(

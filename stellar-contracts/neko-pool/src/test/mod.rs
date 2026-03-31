@@ -38,13 +38,18 @@ fn create_lending_contract(
 ) -> LendingContractClient<'_> {
     let contract_id = e.register(LendingContract, ());
     let client = LendingContractClient::new(e, &contract_id);
+    let treasury = Address::generate(e);
 
     client.initialize(
         &admin,
+        &treasury,
         &neko_oracle,
         &reflector_oracle,
         &1_000_000_000_000, // backstop_threshold: 1000 tokens
-        &500_000,           // backstop_take_rate: 5% (7 decimals)
+        &500_000,           // backstop_take_rate: 5%
+        &1_000_000,         // reserve_factor: 10%
+        &40_000,            // origination_fee_rate: 0.4%
+        &100_000,           // liquidation_fee_rate: 1%
     );
 
     client
@@ -89,21 +94,30 @@ fn test_double_initialization() {
     let contract_id = env.register(LendingContract, ());
     let client = LendingContractClient::new(&env, &contract_id);
 
+    let treasury = Address::generate(&env);
     client.initialize(
         &admin,
+        &treasury,
         &neko_oracle,
         &reflector_oracle,
         &1_000_000_000_000,
-        &500_000, // 5% (7 decimals)
+        &500_000,  // backstop_take_rate: 5%
+        &1_000_000, // reserve_factor: 10%
+        &40_000,   // origination_fee_rate: 0.4%
+        &100_000,  // liquidation_fee_rate: 1%
     );
 
     // Try to initialize again
     client.initialize(
         &admin,
+        &treasury,
         &neko_oracle,
         &reflector_oracle,
         &1_000_000_000_000,
-        &500_000, // 5% (7 decimals)
+        &500_000,
+        &1_000_000,
+        &40_000,
+        &100_000,
     );
 }
 

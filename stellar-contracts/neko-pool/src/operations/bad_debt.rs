@@ -77,9 +77,7 @@ impl BadDebt {
         };
 
         // Store auction
-        let mut storage = Storage::get(env);
-        storage.auction_data.set(auction_id, auction_data);
-        Storage::set(env, &storage);
+        Storage::set_auction(env, auction_id, &auction_data);
 
         // The backstop will cover this debt
         // In a full implementation, we would:
@@ -117,11 +115,7 @@ impl BadDebt {
     ) -> Result<i128, Error> {
         bidder.require_auth();
 
-        let mut storage = Storage::get(env);
-        let auction = storage
-            .auction_data
-            .get(auction_id)
-            .ok_or(Error::AuctionNotFound)?;
+        let auction = Storage::get_auction(env, auction_id).ok_or(Error::AuctionNotFound)?;
 
         // Verify auction type
         if auction.auction_type != AuctionType::BadDebt {
@@ -176,8 +170,8 @@ impl BadDebt {
             // Transfer backstop tokens to bidder (if any)
             if backstop_tokens > 0 {
                 // In a full implementation, transfer from backstop to bidder
-                let backstop_total = storage.backstop_total;
-                storage.backstop_total = backstop_total.saturating_sub(backstop_tokens);
+                let backstop_total = Storage::get_backstop_total(env);
+                Storage::set_backstop_total(env, backstop_total.saturating_sub(backstop_tokens));
             }
 
             // Update pool balance with repaid debt
@@ -187,10 +181,8 @@ impl BadDebt {
 
         // Remove auction if debt is fully covered
         if cdp.d_tokens == 0 {
-            storage.auction_data.remove(auction_id);
+            Storage::del_auction(env, auction_id);
         }
-
-        Storage::set(env, &storage);
 
         // Emit event
         crate::common::events::Events::bad_debt_auction_filled(

@@ -2,359 +2,615 @@ use soroban_sdk::{Address, Env, Map, Symbol, Vec, panic_with_error};
 
 use crate::common::error::Error;
 use crate::common::types::{
-    ADMIN_KEY, AssetType, AuctionData, BackstopDeposit, CDP, INSTANCE_BUMP, INSTANCE_TTL,
-    InterestRateParams, PoolState, ReserveData, STORAGE, USER_BUMP, USER_TTL, WithdrawalRequest,
+    AssetType, AuctionData, BackstopDeposit, CDP, DataKey, INSTANCE_BUMP, INSTANCE_TTL,
+    InterestRateParams, PoolState, ReserveData, SHARED_BUMP, SHARED_TTL, USER_BUMP, USER_TTL,
+    UserAssetKey, UserTokenKey, WithdrawalRequest,
 };
 
-/// Main pool storage structure
-#[derive(Clone)]
-#[soroban_sdk::contracttype]
-pub struct PoolStorage {
-    // Pool state
-    pub pool_state: PoolState,
-    pub pool_balances: Map<Symbol, i128>, // USDC, XLM, etc.
-
-    // Reserve data - Contains b_rate, d_rate, ir_mod, supplies
-    pub reserve_data: Map<Symbol, ReserveData>,
-
-    // Lending (bTokens) - User balances
-    pub b_token_balances: Map<Address, Map<Symbol, i128>>, // bTokens per lender
-
-    // Borrowing (dTokens) - User balances (single asset per borrower)
-    pub d_token_balances: Map<Address, Map<Symbol, i128>>, // dTokens per borrower
-
-    // Collateral
-    pub collateral: Map<Address, Map<Address, i128>>, // RWA tokens per borrower
-
-    // Interest Rate Parameters
-    pub interest_rate_params: Map<Symbol, InterestRateParams>,
-
-    // Auctions (unified structure for all auction types)
-    pub auction_data: Map<u32, AuctionData>,
-
-    // Backstop
-    pub backstop_deposits: Map<Address, BackstopDeposit>,
-    pub backstop_total: i128,
-    pub backstop_threshold: i128,
-    pub backstop_take_rate: u32, // In 7 decimals (SCALAR_7), e.g., 500_000 = 5%
-    pub withdrawal_queue: Vec<WithdrawalRequest>,
-    pub backstop_token: Option<Address>, // Token contract for backstop deposits
-
-    // Treasury & Fees
-    pub treasury: Address,
-    pub reserve_factor: u32,        // 7 decimals, e.g., 1_000_000 = 10%
-    pub origination_fee_rate: u32,  // 7 decimals, e.g., 40_000 = 0.4%
-    pub liquidation_fee_rate: u32,  // 7 decimals, e.g., 100_000 = 1%
-
-    // Oracles
-    pub neko_oracle: Address,
-    pub reflector_oracle: Address,
-
-    // Admin
-    pub admin: Address,
-    pub collateral_factors: Map<Address, u32>, // Collateral factor per token (7 decimals)
-
-    // Token contracts mapping: Symbol -> Address
-    pub token_contracts: Map<Symbol, Address>,
-
-    // Asset type routing: determines which oracle to use
-    pub asset_types: Map<Symbol, AssetType>, // lending assets: Symbol -> AssetType
-    pub collateral_asset_types: Map<Address, AssetType>, // collateral: Address -> AssetType
-    pub collateral_symbols: Map<Address, Symbol>, // for Crypto collateral oracle lookup
-}
-
-/// Storage operations for the lending pool
+/// Storage operations for the lending pool.
+///
+/// Storage layout:
+/// - Instance  (INSTANCE_TTL): config fields — Admin, PoolState, oracle addresses, fee rates,
+///   static config maps (TokenContracts, AssetTypes, CollateralFactors, …)
+/// - Persistent SHARED (SHARED_TTL): per-asset and global mutable data —
+///   PoolBalance, ReserveData, InterestRateParams, Auction, BackstopTotal, WithdrawalQueue
+/// - Persistent USER   (USER_TTL): per-user data —
+///   BTokenBalance, DTokenBalance, Collateral, Cdp, BackstopDeposit
 pub struct Storage;
 
 impl Storage {
-    // ========== TTL Management ==========
+    // =========================================================================
+    // TTL helpers
+    // =========================================================================
 
-    /// Extend instance storage TTL if needed
     pub fn extend_instance_ttl(env: &Env) {
         env.storage()
             .instance()
             .extend_ttl(INSTANCE_TTL, INSTANCE_BUMP);
     }
 
-    // ========== Instance Storage Operations ==========
-
-    /// Get the pool storage
-    pub fn get(env: &Env) -> PoolStorage {
-        Self::extend_instance_ttl(env);
+    fn extend_shared_ttl(env: &Env, key: &DataKey) {
         env.storage()
-            .instance()
-            .get(&STORAGE)
-            .unwrap_or_else(|| panic_with_error!(env, Error::NotInitialized))
+            .persistent()
+            .extend_ttl(key, SHARED_TTL, SHARED_BUMP);
     }
 
-    /// Set the pool storage
-    pub fn set(env: &Env, storage: &PoolStorage) {
-        env.storage().instance().set(&STORAGE, storage);
-        Self::extend_instance_ttl(env);
+    fn extend_user_ttl(env: &Env, key: &DataKey) {
+        env.storage()
+            .persistent()
+            .extend_ttl(key, USER_TTL, USER_BUMP);
     }
 
-    /// Check if pool is initialized
+    // =========================================================================
+    // Initialization check
+    // =========================================================================
+
     pub fn is_initialized(env: &Env) -> bool {
-        env.storage().instance().has(&STORAGE)
+        env.storage().instance().has(&DataKey::Admin)
     }
 
-    /// Get admin address
+    // =========================================================================
+    // Admin
+    // =========================================================================
+
     pub fn get_admin(env: &Env) -> Address {
         Self::extend_instance_ttl(env);
         env.storage()
             .instance()
-            .get(&ADMIN_KEY)
+            .get(&DataKey::Admin)
             .unwrap_or_else(|| panic_with_error!(env, Error::NotInitialized))
     }
 
-    /// Set admin address
     pub fn set_admin(env: &Env, admin: &Address) {
-        if env.storage().instance().has(&ADMIN_KEY) {
+        if env.storage().instance().has(&DataKey::Admin) {
             panic_with_error!(env, Error::AlreadyInitialized);
         }
-        env.storage().instance().set(&ADMIN_KEY, admin);
+        env.storage().instance().set(&DataKey::Admin, admin);
         Self::extend_instance_ttl(env);
     }
 
-    // ========== Reserve Data Operations ==========
+    // =========================================================================
+    // Pool state
+    // =========================================================================
 
-    /// Get reserve data for an asset
-    pub fn get_reserve_data(env: &Env, asset: &Symbol) -> ReserveData {
-        let storage = Self::get(env);
-        storage
-            .reserve_data
-            .get(asset.clone())
-            .unwrap_or_else(|| ReserveData::new(env.ledger().timestamp()))
-    }
-
-    /// Set reserve data for an asset
-    pub fn set_reserve_data(env: &Env, asset: &Symbol, data: &ReserveData) {
-        let mut storage = Self::get(env);
-        storage.reserve_data.set(asset.clone(), data.clone());
-        Self::set(env, &storage);
-    }
-
-    // ========== CDP Operations (Persistent Storage with TTL) ==========
-
-    /// Get CDP for a borrower
-    pub fn get_cdp(env: &Env, borrower: &Address) -> Option<CDP> {
-        let cdp: Option<CDP> = env.storage().persistent().get(borrower).unwrap_or(None);
-
-        // Extend TTL if CDP exists
-        if cdp.is_some() {
-            env.storage()
-                .persistent()
-                .extend_ttl(borrower, USER_TTL, USER_BUMP);
-        }
-
-        cdp
-    }
-
-    /// Set CDP for a borrower
-    pub fn set_cdp(env: &Env, borrower: &Address, cdp: &CDP) {
-        env.storage().persistent().set(borrower, cdp);
+    pub fn get_pool_state(env: &Env) -> PoolState {
+        Self::extend_instance_ttl(env);
         env.storage()
-            .persistent()
-            .extend_ttl(borrower, USER_TTL, USER_BUMP);
+            .instance()
+            .get(&DataKey::PoolState)
+            .unwrap_or(PoolState::Active)
     }
 
-    // ========== bToken Operations ==========
+    pub fn set_pool_state(env: &Env, state: PoolState) {
+        env.storage().instance().set(&DataKey::PoolState, &state);
+        Self::extend_instance_ttl(env);
+    }
 
-    /// Get bToken balance for a lender
-    pub fn get_b_token_balance(env: &Env, lender: &Address, asset: &Symbol) -> i128 {
-        let storage = Self::get(env);
-        storage
-            .b_token_balances
-            .get(lender.clone())
-            .unwrap_or(Map::new(env))
-            .get(asset.clone())
+    // =========================================================================
+    // Oracle addresses
+    // =========================================================================
+
+    pub fn get_neko_oracle(env: &Env) -> Address {
+        Self::extend_instance_ttl(env);
+        env.storage()
+            .instance()
+            .get(&DataKey::NekoOracle)
+            .unwrap_or_else(|| panic_with_error!(env, Error::NotInitialized))
+    }
+
+    pub fn set_neko_oracle(env: &Env, oracle: &Address) {
+        env.storage().instance().set(&DataKey::NekoOracle, oracle);
+        Self::extend_instance_ttl(env);
+    }
+
+    pub fn get_reflector_oracle(env: &Env) -> Address {
+        Self::extend_instance_ttl(env);
+        env.storage()
+            .instance()
+            .get(&DataKey::ReflectorOracle)
+            .unwrap_or_else(|| panic_with_error!(env, Error::NotInitialized))
+    }
+
+    pub fn set_reflector_oracle(env: &Env, oracle: &Address) {
+        env.storage()
+            .instance()
+            .set(&DataKey::ReflectorOracle, oracle);
+        Self::extend_instance_ttl(env);
+    }
+
+    // =========================================================================
+    // Backstop config
+    // =========================================================================
+
+    pub fn get_backstop_token(env: &Env) -> Option<Address> {
+        Self::extend_instance_ttl(env);
+        env.storage().instance().get(&DataKey::BackstopToken)
+    }
+
+    pub fn set_backstop_token(env: &Env, token: &Address) {
+        env.storage()
+            .instance()
+            .set(&DataKey::BackstopToken, token);
+        Self::extend_instance_ttl(env);
+    }
+
+    pub fn get_backstop_threshold(env: &Env) -> i128 {
+        Self::extend_instance_ttl(env);
+        env.storage()
+            .instance()
+            .get(&DataKey::BackstopThreshold)
             .unwrap_or(0)
     }
 
-    /// Set bToken balance for a lender
-    pub fn set_b_token_balance(env: &Env, lender: &Address, asset: &Symbol, amount: i128) {
-        let mut storage = Self::get(env);
-        let mut lender_balances = storage
-            .b_token_balances
-            .get(lender.clone())
+    pub fn set_backstop_threshold(env: &Env, threshold: i128) {
+        env.storage()
+            .instance()
+            .set(&DataKey::BackstopThreshold, &threshold);
+        Self::extend_instance_ttl(env);
+    }
+
+    pub fn get_backstop_take_rate(env: &Env) -> u32 {
+        Self::extend_instance_ttl(env);
+        env.storage()
+            .instance()
+            .get(&DataKey::BackstopTakeRate)
+            .unwrap_or(0)
+    }
+
+    pub fn set_backstop_take_rate(env: &Env, rate: u32) {
+        env.storage()
+            .instance()
+            .set(&DataKey::BackstopTakeRate, &rate);
+        Self::extend_instance_ttl(env);
+    }
+
+    // =========================================================================
+    // Fee config
+    // =========================================================================
+
+    pub fn get_treasury(env: &Env) -> Address {
+        Self::extend_instance_ttl(env);
+        env.storage()
+            .instance()
+            .get(&DataKey::Treasury)
+            .unwrap_or_else(|| panic_with_error!(env, Error::TreasuryNotSet))
+    }
+
+    pub fn set_treasury(env: &Env, treasury: &Address) {
+        env.storage()
+            .instance()
+            .set(&DataKey::Treasury, treasury);
+        Self::extend_instance_ttl(env);
+    }
+
+    pub fn get_reserve_factor(env: &Env) -> u32 {
+        Self::extend_instance_ttl(env);
+        env.storage()
+            .instance()
+            .get(&DataKey::ReserveFactor)
+            .unwrap_or(0)
+    }
+
+    pub fn set_reserve_factor(env: &Env, factor: u32) {
+        env.storage()
+            .instance()
+            .set(&DataKey::ReserveFactor, &factor);
+        Self::extend_instance_ttl(env);
+    }
+
+    pub fn get_origination_fee_rate(env: &Env) -> u32 {
+        Self::extend_instance_ttl(env);
+        env.storage()
+            .instance()
+            .get(&DataKey::OriginationFeeRate)
+            .unwrap_or(0)
+    }
+
+    pub fn set_origination_fee_rate(env: &Env, rate: u32) {
+        env.storage()
+            .instance()
+            .set(&DataKey::OriginationFeeRate, &rate);
+        Self::extend_instance_ttl(env);
+    }
+
+    pub fn get_liquidation_fee_rate(env: &Env) -> u32 {
+        Self::extend_instance_ttl(env);
+        env.storage()
+            .instance()
+            .get(&DataKey::LiquidationFeeRate)
+            .unwrap_or(0)
+    }
+
+    pub fn set_liquidation_fee_rate(env: &Env, rate: u32) {
+        env.storage()
+            .instance()
+            .set(&DataKey::LiquidationFeeRate, &rate);
+        Self::extend_instance_ttl(env);
+    }
+
+    // =========================================================================
+    // Asset config maps (instance storage — static config)
+    // =========================================================================
+
+    pub fn get_token_contract(env: &Env, asset: &Symbol) -> Option<Address> {
+        Self::extend_instance_ttl(env);
+        let map: Map<Symbol, Address> = env
+            .storage()
+            .instance()
+            .get(&DataKey::TokenContracts)
             .unwrap_or(Map::new(env));
-        lender_balances.set(asset.clone(), amount);
-        storage
-            .b_token_balances
-            .set(lender.clone(), lender_balances);
-        Self::set(env, &storage);
+        map.get(asset.clone())
     }
 
-    /// Get bTokenRate for an asset (12 decimals)
+    pub fn set_token_contract(env: &Env, asset: &Symbol, token_address: &Address) {
+        let mut map: Map<Symbol, Address> = env
+            .storage()
+            .instance()
+            .get(&DataKey::TokenContracts)
+            .unwrap_or(Map::new(env));
+        map.set(asset.clone(), token_address.clone());
+        env.storage()
+            .instance()
+            .set(&DataKey::TokenContracts, &map);
+        Self::extend_instance_ttl(env);
+    }
+
+    pub fn get_asset_type(env: &Env, asset: &Symbol) -> AssetType {
+        Self::extend_instance_ttl(env);
+        let map: Map<Symbol, AssetType> = env
+            .storage()
+            .instance()
+            .get(&DataKey::AssetTypes)
+            .unwrap_or(Map::new(env));
+        map.get(asset.clone()).unwrap_or(AssetType::Crypto)
+    }
+
+    pub fn set_asset_type(env: &Env, asset: &Symbol, asset_type: AssetType) {
+        let mut map: Map<Symbol, AssetType> = env
+            .storage()
+            .instance()
+            .get(&DataKey::AssetTypes)
+            .unwrap_or(Map::new(env));
+        map.set(asset.clone(), asset_type);
+        env.storage().instance().set(&DataKey::AssetTypes, &map);
+        Self::extend_instance_ttl(env);
+    }
+
+    pub fn get_collateral_asset_type(env: &Env, token: &Address) -> AssetType {
+        Self::extend_instance_ttl(env);
+        let map: Map<Address, AssetType> = env
+            .storage()
+            .instance()
+            .get(&DataKey::CollateralAssetTypes)
+            .unwrap_or(Map::new(env));
+        map.get(token.clone()).unwrap_or(AssetType::Rwa)
+    }
+
+    pub fn set_collateral_asset_type(env: &Env, token: &Address, asset_type: AssetType) {
+        let mut map: Map<Address, AssetType> = env
+            .storage()
+            .instance()
+            .get(&DataKey::CollateralAssetTypes)
+            .unwrap_or(Map::new(env));
+        map.set(token.clone(), asset_type);
+        env.storage()
+            .instance()
+            .set(&DataKey::CollateralAssetTypes, &map);
+        Self::extend_instance_ttl(env);
+    }
+
+    pub fn get_collateral_symbol(env: &Env, token: &Address) -> Option<Symbol> {
+        Self::extend_instance_ttl(env);
+        let map: Map<Address, Symbol> = env
+            .storage()
+            .instance()
+            .get(&DataKey::CollateralSymbols)
+            .unwrap_or(Map::new(env));
+        map.get(token.clone())
+    }
+
+    pub fn set_collateral_symbol(env: &Env, token: &Address, symbol: Symbol) {
+        let mut map: Map<Address, Symbol> = env
+            .storage()
+            .instance()
+            .get(&DataKey::CollateralSymbols)
+            .unwrap_or(Map::new(env));
+        map.set(token.clone(), symbol);
+        env.storage()
+            .instance()
+            .set(&DataKey::CollateralSymbols, &map);
+        Self::extend_instance_ttl(env);
+    }
+
+    pub fn get_collateral_factor(env: &Env, token: &Address) -> Option<u32> {
+        Self::extend_instance_ttl(env);
+        let map: Map<Address, u32> = env
+            .storage()
+            .instance()
+            .get(&DataKey::CollateralFactors)
+            .unwrap_or(Map::new(env));
+        map.get(token.clone())
+    }
+
+    pub fn set_collateral_factor(env: &Env, token: &Address, factor: u32) {
+        let mut map: Map<Address, u32> = env
+            .storage()
+            .instance()
+            .get(&DataKey::CollateralFactors)
+            .unwrap_or(Map::new(env));
+        map.set(token.clone(), factor);
+        env.storage()
+            .instance()
+            .set(&DataKey::CollateralFactors, &map);
+        Self::extend_instance_ttl(env);
+    }
+
+    /// Returns the full collateral factors map (used for iterating in borrow limit calc).
+    pub fn get_collateral_factors(env: &Env) -> Map<Address, u32> {
+        Self::extend_instance_ttl(env);
+        env.storage()
+            .instance()
+            .get(&DataKey::CollateralFactors)
+            .unwrap_or(Map::new(env))
+    }
+
+    // =========================================================================
+    // Reserve data (persistent, per asset)
+    // =========================================================================
+
+    pub fn get_reserve_data(env: &Env, asset: &Symbol) -> ReserveData {
+        let key = DataKey::ReserveData(asset.clone());
+        let data: Option<ReserveData> = env.storage().persistent().get(&key);
+        if data.is_some() {
+            Self::extend_shared_ttl(env, &key);
+        }
+        data.unwrap_or_else(|| ReserveData::new(env.ledger().timestamp()))
+    }
+
+    pub fn set_reserve_data(env: &Env, asset: &Symbol, data: &ReserveData) {
+        let key = DataKey::ReserveData(asset.clone());
+        env.storage().persistent().set(&key, data);
+        Self::extend_shared_ttl(env, &key);
+    }
+
+    // =========================================================================
+    // Interest rate params (persistent, per asset)
+    // =========================================================================
+
+    pub fn get_interest_rate_params(env: &Env, asset: &Symbol) -> Option<InterestRateParams> {
+        let key = DataKey::InterestRateParams(asset.clone());
+        let data: Option<InterestRateParams> = env.storage().persistent().get(&key);
+        if data.is_some() {
+            Self::extend_shared_ttl(env, &key);
+        }
+        data
+    }
+
+    pub fn set_interest_rate_params(env: &Env, asset: &Symbol, params: &InterestRateParams) {
+        let key = DataKey::InterestRateParams(asset.clone());
+        env.storage().persistent().set(&key, params);
+        Self::extend_shared_ttl(env, &key);
+    }
+
+    // Convenience wrappers used by interest accrual
     pub fn get_b_token_rate(env: &Env, asset: &Symbol) -> i128 {
-        let reserve = Self::get_reserve_data(env, asset);
-        reserve.b_rate
+        Self::get_reserve_data(env, asset).b_rate
     }
 
-    /// Get bToken supply for an asset
     pub fn get_b_token_supply(env: &Env, asset: &Symbol) -> i128 {
-        let reserve = Self::get_reserve_data(env, asset);
-        reserve.b_supply
+        Self::get_reserve_data(env, asset).b_supply
     }
 
-    /// Set bToken supply for an asset
     pub fn set_b_token_supply(env: &Env, asset: &Symbol, supply: i128) {
         let mut reserve = Self::get_reserve_data(env, asset);
         reserve.b_supply = supply;
         Self::set_reserve_data(env, asset, &reserve);
     }
 
-    // ========== dToken Operations ==========
-
-    /// Get dToken balance for a borrower
-    pub fn get_d_token_balance(env: &Env, borrower: &Address, asset: &Symbol) -> i128 {
-        let storage = Self::get(env);
-        storage
-            .d_token_balances
-            .get(borrower.clone())
-            .unwrap_or(Map::new(env))
-            .get(asset.clone())
-            .unwrap_or(0)
-    }
-
-    /// Set dToken balance for a borrower
-    pub fn set_d_token_balance(env: &Env, borrower: &Address, asset: &Symbol, amount: i128) {
-        let mut storage = Self::get(env);
-        let mut borrower_balances = storage
-            .d_token_balances
-            .get(borrower.clone())
-            .unwrap_or(Map::new(env));
-        borrower_balances.set(asset.clone(), amount);
-        storage
-            .d_token_balances
-            .set(borrower.clone(), borrower_balances);
-        Self::set(env, &storage);
-    }
-
-    /// Get dTokenRate for an asset (12 decimals)
     pub fn get_d_token_rate(env: &Env, asset: &Symbol) -> i128 {
-        let reserve = Self::get_reserve_data(env, asset);
-        reserve.d_rate
+        Self::get_reserve_data(env, asset).d_rate
     }
 
-    /// Get total dToken supply for an asset
     pub fn get_d_token_supply(env: &Env, asset: &Symbol) -> i128 {
-        let reserve = Self::get_reserve_data(env, asset);
-        reserve.d_supply
+        Self::get_reserve_data(env, asset).d_supply
     }
 
-    /// Set total dToken supply for an asset
     pub fn set_d_token_supply(env: &Env, asset: &Symbol, supply: i128) {
         let mut reserve = Self::get_reserve_data(env, asset);
         reserve.d_supply = supply;
         Self::set_reserve_data(env, asset, &reserve);
     }
 
-    // ========== Collateral Operations ==========
+    // =========================================================================
+    // Pool balance (persistent, per asset)
+    // =========================================================================
 
-    /// Get collateral amount for a borrower and RWA token
-    pub fn get_collateral(env: &Env, borrower: &Address, neko_token: &Address) -> i128 {
-        let storage = Self::get(env);
-        storage
-            .collateral
-            .get(borrower.clone())
-            .unwrap_or(Map::new(env))
-            .get(neko_token.clone())
-            .unwrap_or(0)
-    }
-
-    /// Set collateral amount for a borrower and RWA token
-    pub fn set_collateral(env: &Env, borrower: &Address, neko_token: &Address, amount: i128) {
-        let mut storage = Self::get(env);
-        let mut borrower_collateral = storage
-            .collateral
-            .get(borrower.clone())
-            .unwrap_or(Map::new(env));
-        borrower_collateral.set(neko_token.clone(), amount);
-        storage
-            .collateral
-            .set(borrower.clone(), borrower_collateral);
-        Self::set(env, &storage);
-    }
-
-    // ========== Pool Balance Operations ==========
-
-    /// Get pool balance for an asset
     pub fn get_pool_balance(env: &Env, asset: &Symbol) -> i128 {
-        let storage = Self::get(env);
-        storage.pool_balances.get(asset.clone()).unwrap_or(0)
+        let key = DataKey::PoolBalance(asset.clone());
+        let val: Option<i128> = env.storage().persistent().get(&key);
+        if val.is_some() {
+            Self::extend_shared_ttl(env, &key);
+        }
+        val.unwrap_or(0)
     }
 
-    /// Set pool balance for an asset
     pub fn set_pool_balance(env: &Env, asset: &Symbol, amount: i128) {
-        let mut storage = Self::get(env);
-        storage.pool_balances.set(asset.clone(), amount);
-        Self::set(env, &storage);
+        let key = DataKey::PoolBalance(asset.clone());
+        env.storage().persistent().set(&key, &amount);
+        Self::extend_shared_ttl(env, &key);
     }
 
-    // ========== Token Contract Operations ==========
+    // =========================================================================
+    // bToken balances (persistent, per user per asset)
+    // =========================================================================
 
-    /// Get token contract address for an asset symbol
-    pub fn get_token_contract(env: &Env, asset: &Symbol) -> Option<Address> {
-        let storage = Self::get(env);
-        storage.token_contracts.get(asset.clone())
+    pub fn get_b_token_balance(env: &Env, lender: &Address, asset: &Symbol) -> i128 {
+        let key = DataKey::BTokenBalance(UserAssetKey {
+            user: lender.clone(),
+            asset: asset.clone(),
+        });
+        let val: Option<i128> = env.storage().persistent().get(&key);
+        if val.is_some() {
+            Self::extend_user_ttl(env, &key);
+        }
+        val.unwrap_or(0)
     }
 
-    /// Set token contract address for an asset symbol
-    pub fn set_token_contract(env: &Env, asset: &Symbol, token_address: &Address) {
-        let mut storage = Self::get(env);
-        storage
-            .token_contracts
-            .set(asset.clone(), token_address.clone());
-        Self::set(env, &storage);
+    pub fn set_b_token_balance(env: &Env, lender: &Address, asset: &Symbol, amount: i128) {
+        let key = DataKey::BTokenBalance(UserAssetKey {
+            user: lender.clone(),
+            asset: asset.clone(),
+        });
+        env.storage().persistent().set(&key, &amount);
+        Self::extend_user_ttl(env, &key);
     }
 
-    // ========== Asset Type Operations ==========
+    // =========================================================================
+    // dToken balances (persistent, per user per asset)
+    // =========================================================================
 
-    /// Get asset type for a lending asset (defaults to Crypto for backward compatibility)
-    pub fn get_asset_type(env: &Env, asset: &Symbol) -> AssetType {
-        let storage = Self::get(env);
-        storage
-            .asset_types
-            .get(asset.clone())
-            .unwrap_or(AssetType::Crypto)
+    pub fn get_d_token_balance(env: &Env, borrower: &Address, asset: &Symbol) -> i128 {
+        let key = DataKey::DTokenBalance(UserAssetKey {
+            user: borrower.clone(),
+            asset: asset.clone(),
+        });
+        let val: Option<i128> = env.storage().persistent().get(&key);
+        if val.is_some() {
+            Self::extend_user_ttl(env, &key);
+        }
+        val.unwrap_or(0)
     }
 
-    /// Set asset type for a lending asset
-    pub fn set_asset_type(env: &Env, asset: &Symbol, asset_type: AssetType) {
-        let mut storage = Self::get(env);
-        storage.asset_types.set(asset.clone(), asset_type);
-        Self::set(env, &storage);
+    pub fn set_d_token_balance(env: &Env, borrower: &Address, asset: &Symbol, amount: i128) {
+        let key = DataKey::DTokenBalance(UserAssetKey {
+            user: borrower.clone(),
+            asset: asset.clone(),
+        });
+        env.storage().persistent().set(&key, &amount);
+        Self::extend_user_ttl(env, &key);
     }
 
-    /// Get asset type for a collateral token (defaults to Rwa for backward compatibility)
-    pub fn get_collateral_asset_type(env: &Env, token: &Address) -> AssetType {
-        let storage = Self::get(env);
-        storage
-            .collateral_asset_types
-            .get(token.clone())
-            .unwrap_or(AssetType::Rwa)
+    // =========================================================================
+    // Collateral (persistent, per user per token)
+    // =========================================================================
+
+    pub fn get_collateral(env: &Env, borrower: &Address, neko_token: &Address) -> i128 {
+        let key = DataKey::Collateral(UserTokenKey {
+            user: borrower.clone(),
+            token: neko_token.clone(),
+        });
+        let val: Option<i128> = env.storage().persistent().get(&key);
+        if val.is_some() {
+            Self::extend_user_ttl(env, &key);
+        }
+        val.unwrap_or(0)
     }
 
-    /// Set asset type for a collateral token
-    pub fn set_collateral_asset_type(env: &Env, token: &Address, asset_type: AssetType) {
-        let mut storage = Self::get(env);
-        storage
-            .collateral_asset_types
-            .set(token.clone(), asset_type);
-        Self::set(env, &storage);
+    pub fn set_collateral(env: &Env, borrower: &Address, neko_token: &Address, amount: i128) {
+        let key = DataKey::Collateral(UserTokenKey {
+            user: borrower.clone(),
+            token: neko_token.clone(),
+        });
+        env.storage().persistent().set(&key, &amount);
+        Self::extend_user_ttl(env, &key);
     }
 
-    /// Get symbol for a collateral token (used for Crypto collateral oracle lookup)
-    pub fn get_collateral_symbol(env: &Env, token: &Address) -> Option<Symbol> {
-        let storage = Self::get(env);
-        storage.collateral_symbols.get(token.clone())
+    // =========================================================================
+    // CDP (persistent, per borrower)
+    // =========================================================================
+
+    pub fn get_cdp(env: &Env, borrower: &Address) -> Option<CDP> {
+        let key = DataKey::Cdp(borrower.clone());
+        let cdp: Option<CDP> = env.storage().persistent().get(&key);
+        if cdp.is_some() {
+            Self::extend_user_ttl(env, &key);
+        }
+        cdp
     }
 
-    /// Set symbol for a collateral token
-    pub fn set_collateral_symbol(env: &Env, token: &Address, symbol: Symbol) {
-        let mut storage = Self::get(env);
-        storage.collateral_symbols.set(token.clone(), symbol);
-        Self::set(env, &storage);
+    pub fn set_cdp(env: &Env, borrower: &Address, cdp: &CDP) {
+        let key = DataKey::Cdp(borrower.clone());
+        env.storage().persistent().set(&key, cdp);
+        Self::extend_user_ttl(env, &key);
+    }
+
+    // =========================================================================
+    // Backstop deposits (persistent, per depositor)
+    // =========================================================================
+
+    pub fn get_backstop_deposit(env: &Env, depositor: &Address) -> Option<BackstopDeposit> {
+        let key = DataKey::BackstopDeposit(depositor.clone());
+        let deposit: Option<BackstopDeposit> = env.storage().persistent().get(&key);
+        if deposit.is_some() {
+            Self::extend_user_ttl(env, &key);
+        }
+        deposit
+    }
+
+    pub fn set_backstop_deposit(env: &Env, depositor: &Address, deposit: &BackstopDeposit) {
+        let key = DataKey::BackstopDeposit(depositor.clone());
+        env.storage().persistent().set(&key, deposit);
+        Self::extend_user_ttl(env, &key);
+    }
+
+    // =========================================================================
+    // Backstop total (persistent, global)
+    // =========================================================================
+
+    pub fn get_backstop_total(env: &Env) -> i128 {
+        let key = DataKey::BackstopTotal;
+        let val: Option<i128> = env.storage().persistent().get(&key);
+        if val.is_some() {
+            Self::extend_shared_ttl(env, &key);
+        }
+        val.unwrap_or(0)
+    }
+
+    pub fn set_backstop_total(env: &Env, total: i128) {
+        let key = DataKey::BackstopTotal;
+        env.storage().persistent().set(&key, &total);
+        Self::extend_shared_ttl(env, &key);
+    }
+
+    // =========================================================================
+    // Withdrawal queue (persistent, global, bounded by MAX_BACKSTOP_QUEUE_SIZE)
+    // =========================================================================
+
+    pub fn get_withdrawal_queue(env: &Env) -> Vec<WithdrawalRequest> {
+        let key = DataKey::WithdrawalQueue;
+        let val: Option<Vec<WithdrawalRequest>> = env.storage().persistent().get(&key);
+        if val.is_some() {
+            Self::extend_shared_ttl(env, &key);
+        }
+        val.unwrap_or(Vec::new(env))
+    }
+
+    pub fn set_withdrawal_queue(env: &Env, queue: &Vec<WithdrawalRequest>) {
+        let key = DataKey::WithdrawalQueue;
+        env.storage().persistent().set(&key, queue);
+        Self::extend_shared_ttl(env, &key);
+    }
+
+    // =========================================================================
+    // Auctions (persistent, per auction id)
+    // =========================================================================
+
+    pub fn get_auction(env: &Env, id: u32) -> Option<AuctionData> {
+        let key = DataKey::Auction(id);
+        let val: Option<AuctionData> = env.storage().persistent().get(&key);
+        if val.is_some() {
+            Self::extend_shared_ttl(env, &key);
+        }
+        val
+    }
+
+    pub fn set_auction(env: &Env, id: u32, auction: &AuctionData) {
+        let key = DataKey::Auction(id);
+        env.storage().persistent().set(&key, auction);
+        Self::extend_shared_ttl(env, &key);
+    }
+
+    pub fn del_auction(env: &Env, id: u32) {
+        env.storage().persistent().remove(&DataKey::Auction(id));
     }
 }

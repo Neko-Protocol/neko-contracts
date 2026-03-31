@@ -2,10 +2,8 @@ use soroban_sdk::{Env, Symbol};
 
 use crate::common::error::Error;
 use crate::common::events::Events;
-use crate::common::storage::{PoolStorage, Storage};
-use crate::common::types::{
-    InterestRateParams, ReserveData, SCALAR_7, SCALAR_12, SECONDS_PER_YEAR,
-};
+use crate::common::storage::Storage;
+use crate::common::types::{InterestRateParams, ReserveData, SCALAR_7, SCALAR_12, SECONDS_PER_YEAR};
 
 /// Interest rate calculations and accrual
 ///
@@ -21,13 +19,9 @@ impl Interest {
     /// Updates b_rate, d_rate, ir_mod, and backstop_credit
     pub fn accrue_interest(env: &Env, asset: &Symbol) -> Result<(), Error> {
         let current_time = env.ledger().timestamp();
-        let mut storage = Storage::get(env);
 
         // Get or create reserve data
-        let mut reserve = storage
-            .reserve_data
-            .get(asset.clone())
-            .unwrap_or_else(|| ReserveData::new(current_time));
+        let mut reserve = Storage::get_reserve_data(env, asset);
 
         // No time has passed, no accrual needed
         if current_time <= reserve.last_time {
@@ -37,15 +31,12 @@ impl Interest {
         // No supply, no accrual needed
         if reserve.b_supply == 0 {
             reserve.last_time = current_time;
-            storage.reserve_data.set(asset.clone(), reserve);
-            Storage::set(env, &storage);
+            Storage::set_reserve_data(env, asset, &reserve);
             return Ok(());
         }
 
         // Get interest rate parameters
-        let params = storage
-            .interest_rate_params
-            .get(asset.clone())
+        let params = Storage::get_interest_rate_params(env, asset)
             .unwrap_or_else(Self::default_params);
 
         // Calculate utilization (7 decimals)
@@ -54,8 +45,7 @@ impl Interest {
         // No borrowing, no accrual needed
         if utilization == 0 {
             reserve.last_time = current_time;
-            storage.reserve_data.set(asset.clone(), reserve);
-            Storage::set(env, &storage);
+            Storage::set_reserve_data(env, asset, &reserve);
             return Ok(());
         }
 
@@ -68,20 +58,22 @@ impl Interest {
             current_time,
         )?;
 
+        let backstop_take_rate = Storage::get_backstop_take_rate(env);
+        let reserve_factor = Storage::get_reserve_factor(env);
+
         // Update reserve data
         Self::apply_accrual(
             env,
             &mut reserve,
-            &storage,
-            asset,
+            backstop_take_rate,
+            reserve_factor,
             accrual,
             new_ir_mod,
             current_time,
         )?;
 
         // Save updated reserve
-        storage.reserve_data.set(asset.clone(), reserve.clone());
-        Storage::set(env, &storage);
+        Storage::set_reserve_data(env, asset, &reserve);
 
         // Emit event
         Events::interest_accrued(env, asset, reserve.b_rate, reserve.d_rate, reserve.ir_mod);
@@ -242,12 +234,15 @@ impl Interest {
     fn apply_accrual(
         _env: &Env,
         reserve: &mut ReserveData,
-        storage: &PoolStorage,
-        _asset: &Symbol,
+        backstop_take_rate: u32,
+        reserve_factor: u32,
         accrual: i128,    // 12 decimals
         new_ir_mod: i128, // 7 decimals
         current_time: u64,
     ) -> Result<(), Error> {
+        let backstop_take_rate = backstop_take_rate as i128;
+        let reserve_factor = reserve_factor as i128;
+
         // Save old d_rate before updating
         let old_d_rate = reserve.d_rate;
 
@@ -259,8 +254,6 @@ impl Interest {
             .ok_or(Error::ArithmeticError)?;
 
         // Calculate protocol takes from interest earned
-        let backstop_take_rate = storage.backstop_take_rate as i128;
-        let reserve_factor = storage.reserve_factor as i128;
         let total_protocol_rate = backstop_take_rate + reserve_factor;
 
         if reserve.d_supply > 0 && total_protocol_rate > 0 {
@@ -341,12 +334,7 @@ impl Interest {
     /// Calculate utilization ratio (7 decimals)
     /// U = TotalLiabilities / TotalSupply
     pub fn calculate_utilization(env: &Env, asset: &Symbol) -> Result<i128, Error> {
-        let storage = Storage::get(env);
-        let reserve = storage
-            .reserve_data
-            .get(asset.clone())
-            .unwrap_or_else(|| ReserveData::new(env.ledger().timestamp()));
-
+        let reserve = Storage::get_reserve_data(env, asset);
         Self::calculate_utilization_internal(&reserve)
     }
 
@@ -393,15 +381,8 @@ impl Interest {
 
     /// Get current interest rate for an asset (7 decimals)
     pub fn get_interest_rate(env: &Env, asset: &Symbol) -> Result<i128, Error> {
-        let storage = Storage::get(env);
-        let reserve = storage
-            .reserve_data
-            .get(asset.clone())
-            .unwrap_or_else(|| ReserveData::new(env.ledger().timestamp()));
-
-        let params = storage
-            .interest_rate_params
-            .get(asset.clone())
+        let reserve = Storage::get_reserve_data(env, asset);
+        let params = Storage::get_interest_rate_params(env, asset)
             .unwrap_or_else(Self::default_params);
 
         let utilization = Self::calculate_utilization_internal(&reserve)?;

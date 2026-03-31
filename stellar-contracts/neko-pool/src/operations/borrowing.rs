@@ -95,10 +95,7 @@ impl Borrowing {
         let d_token_rate = Storage::get_d_token_rate(env, asset);
 
         // Calculate origination fee
-        let origination_fee_rate = {
-            let s = Storage::get(env);
-            s.origination_fee_rate as i128
-        };
+        let origination_fee_rate = Storage::get_origination_fee_rate(env) as i128;
         let origination_fee = amount
             .checked_mul(origination_fee_rate)
             .ok_or(Error::ArithmeticError)?

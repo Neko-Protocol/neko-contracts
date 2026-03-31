@@ -13,8 +13,7 @@ impl Oracles {
     /// The RWA Oracle implements SEP-40, so we use Asset::Other(symbol) to query prices
     /// We get the symbol from the RWA token contract's pegged_asset() function
     pub fn get_rwa_price(env: &Env, neko_token: &Address) -> Result<PriceData, Error> {
-        let storage = Storage::get(env);
-        let oracle_client = neko_oracle::Client::new(env, &storage.neko_oracle);
+        let oracle_client = neko_oracle::Client::new(env, &Storage::get_neko_oracle(env));
 
         // Get the pegged asset symbol from the RWA Oracle
         // The oracle maintains a mapping from token contract address to asset symbol
@@ -51,13 +50,10 @@ impl Oracles {
     /// Get crypto asset price from Reflector Oracle
     /// The Reflector Oracle implements SEP-40, so we use Asset::Other(symbol) to query prices
     pub fn get_crypto_price(env: &Env, asset: &Symbol) -> Result<PriceData, Error> {
-        let storage = Storage::get(env);
-
         // Reflector Oracle implements SEP-40 interface (same as RWA Oracle)
         // We reuse neko_oracle::Client here because both oracles share the same SEP-40 interface.
         // The client is generic - it works with any contract implementing SEP-40 methods.
-        // The Reflector Oracle contract address is stored in storage.reflector_oracle
-        let oracle_client = neko_oracle::Client::new(env, &storage.reflector_oracle);
+        let oracle_client = neko_oracle::Client::new(env, &Storage::get_reflector_oracle(env));
 
         // Convert Symbol to Asset::Other (for crypto assets like XLM, USDC, etc.)
         let asset_enum = Asset::Other(asset.clone());
@@ -94,8 +90,7 @@ impl Oracles {
     ) -> Result<(i128, u32), Error> {
         let price_data = Self::get_rwa_price(env, neko_token)?;
 
-        let storage = Storage::get(env);
-        let oracle_client = neko_oracle::Client::new(env, &storage.neko_oracle);
+        let oracle_client = neko_oracle::Client::new(env, &Storage::get_neko_oracle(env));
 
         // Get decimals from oracle (SEP-40 compatible)
         let decimals = oracle_client.decimals();
@@ -107,8 +102,7 @@ impl Oracles {
     pub fn get_crypto_price_with_decimals(env: &Env, asset: &Symbol) -> Result<(i128, u32), Error> {
         let price_data = Self::get_crypto_price(env, asset)?;
 
-        let storage = Storage::get(env);
-        let oracle_client = neko_oracle::Client::new(env, &storage.reflector_oracle);
+        let oracle_client = neko_oracle::Client::new(env, &Storage::get_reflector_oracle(env));
 
         // Get decimals from Reflector Oracle (SEP-40 compatible)
         let decimals = oracle_client.decimals();
@@ -144,14 +138,12 @@ impl Oracles {
 
     /// Get RWA oracle decimals once — call before loops to avoid one cross-contract call per iteration
     pub fn get_neko_oracle_decimals(env: &Env) -> u32 {
-        let storage = Storage::get(env);
-        neko_oracle::Client::new(env, &storage.neko_oracle).decimals()
+        neko_oracle::Client::new(env, &Storage::get_neko_oracle(env)).decimals()
     }
 
     /// Get Reflector oracle decimals once — call before loops to avoid one cross-contract call per iteration
     pub fn get_reflector_oracle_decimals(env: &Env) -> u32 {
-        let storage = Storage::get(env);
-        neko_oracle::Client::new(env, &storage.reflector_oracle).decimals()
+        neko_oracle::Client::new(env, &Storage::get_reflector_oracle(env)).decimals()
     }
 
     /// Like get_price_for_collateral but accepts pre-fetched oracle decimals.

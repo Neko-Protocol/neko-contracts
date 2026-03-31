@@ -172,10 +172,8 @@ impl Collateral {
 
     /// Get all collateral for a borrower
     pub fn get_all_collateral(env: &Env, borrower: &Address) -> soroban_sdk::Map<Address, i128> {
-        let storage = Storage::get(env);
-        storage
-            .collateral
-            .get(borrower.clone())
+        Storage::get_cdp(env, borrower)
+            .map(|cdp| cdp.collateral)
             .unwrap_or(soroban_sdk::Map::new(env))
     }
 }
