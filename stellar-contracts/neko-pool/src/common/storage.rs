@@ -2,7 +2,7 @@ use soroban_sdk::{Address, Env, Map, Symbol, panic_with_error};
 
 use crate::common::error::Error;
 use crate::common::types::{
-    AssetType, AuctionData, BackstopDeposit, CDP, DataKey, AUCTION_BUMP, AUCTION_TTL,
+    AssetType, AuctionData, CDP, DataKey, AUCTION_BUMP, AUCTION_TTL,
     INSTANCE_BUMP, INSTANCE_TTL, InterestRateParams, PoolState, PROPOSAL_BUMP, PROPOSAL_TTL,
     QUEUED_CONFIG_BUMP, QUEUED_CONFIG_TTL, QueuedReserveConfig, ReserveData, SHARED_BUMP,
     SHARED_TTL, USER_BUMP, USER_TTL, UserAssetKey,
@@ -14,10 +14,8 @@ use crate::common::types::{
 /// - Instance  (INSTANCE_TTL): fixed-size scalar config — Admin, PoolState, oracle addresses,
 ///   fee rates. No Maps; Maps were moved to per-entry persistent entries to avoid unbounded growth.
 /// - Persistent SHARED (SHARED_TTL): per-asset config (CollateralFactor, TokenContract, AssetType…),
-///   per-asset state (PoolBalance, ReserveData, InterestRateParams),
-///   and global counters (BackstopTotal, BackstopQueuedTotal, Auction).
-/// - Persistent USER   (USER_TTL): per-user data —
-///   BTokenBalance, DTokenBalance, Cdp (which embeds collateral), BackstopDeposit.
+///   per-asset state (PoolBalance, ReserveData, InterestRateParams), and per-auction state.
+/// - Persistent USER   (USER_TTL): per-user data — BTokenBalance, DTokenBalance, Cdp.
 pub struct Storage;
 
 impl Storage {
@@ -144,7 +142,23 @@ impl Storage {
     }
 
     // =========================================================================
-    // Backstop config
+    // Backstop contract reference
+    // =========================================================================
+
+    pub fn get_backstop_contract(env: &Env) -> Option<Address> {
+        Self::extend_instance_ttl(env);
+        env.storage().instance().get(&DataKey::BackstopContract)
+    }
+
+    pub fn set_backstop_contract(env: &Env, backstop: &Address) {
+        env.storage()
+            .instance()
+            .set(&DataKey::BackstopContract, backstop);
+        Self::extend_instance_ttl(env);
+    }
+
+    // =========================================================================
+    // Backstop token reference (used by interest auctions)
     // =========================================================================
 
     pub fn get_backstop_token(env: &Env) -> Option<Address> {
@@ -159,20 +173,9 @@ impl Storage {
         Self::extend_instance_ttl(env);
     }
 
-    pub fn get_backstop_threshold(env: &Env) -> i128 {
-        Self::extend_instance_ttl(env);
-        env.storage()
-            .instance()
-            .get(&DataKey::BackstopThreshold)
-            .unwrap_or(0)
-    }
-
-    pub fn set_backstop_threshold(env: &Env, threshold: i128) {
-        env.storage()
-            .instance()
-            .set(&DataKey::BackstopThreshold, &threshold);
-        Self::extend_instance_ttl(env);
-    }
+    // =========================================================================
+    // Backstop take rate
+    // =========================================================================
 
     pub fn get_backstop_take_rate(env: &Env) -> u32 {
         Self::extend_instance_ttl(env);
@@ -255,8 +258,6 @@ impl Storage {
 
     // =========================================================================
     // Asset config (persistent per-entry, SHARED_TTL)
-    // Moving from instance Maps to per-entry persistent prevents unbounded
-    // instance storage growth as more assets and collateral tokens are added.
     // =========================================================================
 
     pub fn get_token_contract(env: &Env, asset: &Symbol) -> Option<Address> {
@@ -499,8 +500,6 @@ impl Storage {
 
     // =========================================================================
     // Collateral — CDP.collateral is the single source of truth.
-    // These wrappers read/write through the CDP to eliminate the old duplicate
-    // Collateral(UserTokenKey) entries. All enumeration uses CDP.collateral.
     // =========================================================================
 
     pub fn get_collateral(env: &Env, borrower: &Address, token: &Address) -> i128 {
@@ -541,67 +540,7 @@ impl Storage {
     }
 
     // =========================================================================
-    // Backstop deposits (persistent, per depositor)
-    // =========================================================================
-
-    pub fn get_backstop_deposit(env: &Env, depositor: &Address) -> Option<BackstopDeposit> {
-        let key = DataKey::BackstopDeposit(depositor.clone());
-        let deposit: Option<BackstopDeposit> = env.storage().persistent().get(&key);
-        if deposit.is_some() {
-            Self::extend_user_ttl(env, &key);
-        }
-        deposit
-    }
-
-    pub fn set_backstop_deposit(env: &Env, depositor: &Address, deposit: &BackstopDeposit) {
-        let key = DataKey::BackstopDeposit(depositor.clone());
-        env.storage().persistent().set(&key, deposit);
-        Self::extend_user_ttl(env, &key);
-    }
-
-    // =========================================================================
-    // Backstop total (persistent, global)
-    // =========================================================================
-
-    pub fn get_backstop_total(env: &Env) -> i128 {
-        let key = DataKey::BackstopTotal;
-        let val: Option<i128> = env.storage().persistent().get(&key);
-        if val.is_some() {
-            Self::extend_shared_ttl(env, &key);
-        }
-        val.unwrap_or(0)
-    }
-
-    pub fn set_backstop_total(env: &Env, total: i128) {
-        let key = DataKey::BackstopTotal;
-        env.storage().persistent().set(&key, &total);
-        Self::extend_shared_ttl(env, &key);
-    }
-
-    // =========================================================================
-    // Backstop queued total — O(1) Q4W counter replacing the global Vec.
-    // Incremented on initiate_withdrawal, decremented on withdraw.
-    // =========================================================================
-
-    pub fn get_backstop_queued_total(env: &Env) -> i128 {
-        let key = DataKey::BackstopQueuedTotal;
-        let val: Option<i128> = env.storage().persistent().get(&key);
-        if val.is_some() {
-            Self::extend_shared_ttl(env, &key);
-        }
-        val.unwrap_or(0)
-    }
-
-    pub fn set_backstop_queued_total(env: &Env, total: i128) {
-        let key = DataKey::BackstopQueuedTotal;
-        env.storage().persistent().set(&key, &total);
-        Self::extend_shared_ttl(env, &key);
-    }
-
-    // =========================================================================
     // Auctions (temporary storage — auto-expires after AUCTION_TTL if not filled)
-    // Using temporary storage matches Blend v2: unfilled auctions are garbage-collected
-    // by Soroban automatically, preventing stale auction accumulation.
     // =========================================================================
 
     pub fn get_auction(env: &Env, id: u32) -> Option<AuctionData> {

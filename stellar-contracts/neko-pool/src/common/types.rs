@@ -90,15 +90,6 @@ pub const DEFAULT_ORIGINATION_FEE_RATE: u32 = 40_000;
 #[allow(dead_code)]
 pub const DEFAULT_LIQUIDATION_FEE_RATE: u32 = 100_000;
 
-// ============================================================================
-// BACKSTOP CONSTANTS
-// ============================================================================
-
-/// Backstop withdrawal queue timing
-pub const BACKSTOP_WITHDRAWAL_QUEUE_DAYS: u64 = 17;
-pub const BACKSTOP_WITHDRAWAL_QUEUE_SECONDS: u64 = BACKSTOP_WITHDRAWAL_QUEUE_DAYS * 24 * 60 * 60;
-// MAX_BACKSTOP_QUEUE_SIZE removed — Q4W is now per-user with a global counter
-
 /// Bad debt auction lot multiplier (120% = 1.2x safety margin)
 /// 7 decimals: 12_000_000 = 1.2
 #[allow(dead_code)]
@@ -319,29 +310,6 @@ pub struct AuctionData {
 }
 
 // ============================================================================
-// BACKSTOP TYPES
-// ============================================================================
-
-/// Backstop deposit record with embedded Q4W (Queue for Withdrawal) state.
-/// queued_amount == 0 means the depositor is NOT in the withdrawal queue.
-/// The global BackstopQueuedTotal counter is kept in sync with the sum of all queued_amounts.
-#[contracttype]
-#[derive(Clone, Debug)]
-pub struct BackstopDeposit {
-    /// Total deposited amount
-    pub amount: i128,
-
-    /// Deposit timestamp
-    pub deposited_at: u64,
-
-    /// Amount currently in Q4W (0 = not queued)
-    pub queued_amount: i128,
-
-    /// Queue entry timestamp (Some if queued_amount > 0)
-    pub queued_at: Option<u64>,
-}
-
-// ============================================================================
 // ORACLE TYPES
 // ============================================================================
 
@@ -487,8 +455,7 @@ pub struct UserAssetKey {
 /// - Instance storage          : fixed-size scalar config (Admin, PoolState, fee rates, oracles)
 /// - Persistent SHARED per-entry: per-asset config set by admin (CollateralFactor, TokenContract…)
 ///   and per-asset state (PoolBalance, ReserveData, InterestRateParams, Auction)
-///   and global counters (BackstopTotal, BackstopQueuedTotal)
-/// - Persistent USER per-entry : per-user positions (BTokenBalance, DTokenBalance, Cdp, BackstopDeposit)
+/// - Persistent USER per-entry : per-user positions (BTokenBalance, DTokenBalance, Cdp)
 #[contracttype]
 #[derive(Clone)]
 pub enum DataKey {
@@ -497,8 +464,8 @@ pub enum DataKey {
     PoolState,
     NekoOracle,
     ReflectorOracle,
+    BackstopContract,
     BackstopToken,
-    BackstopThreshold,
     BackstopTakeRate,
     Treasury,
     ReserveFactor,
@@ -521,11 +488,6 @@ pub enum DataKey {
     BTokenBalance(UserAssetKey),
     DTokenBalance(UserAssetKey),
     Cdp(Address),
-    BackstopDeposit(Address),
-
-    // ---- Persistent storage (global mutable, SHARED_TTL) ----
-    BackstopTotal,
-    BackstopQueuedTotal,
 
     // ---- Temporary storage (auto-expires) ----
     // Unfilled auctions are garbage-collected automatically by Soroban.

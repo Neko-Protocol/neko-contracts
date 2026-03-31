@@ -167,11 +167,21 @@ impl BadDebt {
             cdp.last_update = env.ledger().timestamp();
             Storage::set_cdp(env, &auction.user, &cdp);
 
-            // Transfer backstop tokens to bidder (if any)
+            // Transfer backstop tokens to bidder via the backstop contract.
+            // The backstop contract handles its own balance; we just notify via token transfer.
             if backstop_tokens > 0 {
-                // In a full implementation, transfer from backstop to bidder
-                let backstop_total = Storage::get_backstop_total(env);
-                Storage::set_backstop_total(env, backstop_total.saturating_sub(backstop_tokens));
+                if let (Some(backstop_token), Some(backstop_contract)) = (
+                    Storage::get_backstop_token(env),
+                    Storage::get_backstop_contract(env),
+                ) {
+                    let backstop_token_client =
+                        soroban_sdk::token::TokenClient::new(env, &backstop_token);
+                    backstop_token_client.transfer(
+                        &backstop_contract,
+                        bidder,
+                        &backstop_tokens,
+                    );
+                }
             }
 
             // Update pool balance with repaid debt

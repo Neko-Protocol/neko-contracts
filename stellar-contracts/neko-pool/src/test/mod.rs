@@ -45,7 +45,6 @@ fn create_lending_contract(
         &treasury,
         &neko_oracle,
         &reflector_oracle,
-        &1_000_000_000_000, // backstop_threshold: 1000 tokens
         &500_000,           // backstop_take_rate: 5%
         &1_000_000,         // reserve_factor: 10%
         &40_000,            // origination_fee_rate: 0.4%
@@ -103,7 +102,6 @@ fn test_double_initialization() {
         &treasury,
         &neko_oracle,
         &reflector_oracle,
-        &1_000_000_000_000,
         &500_000,  // backstop_take_rate: 5%
         &1_000_000, // reserve_factor: 10%
         &40_000,   // origination_fee_rate: 0.4%
@@ -116,7 +114,6 @@ fn test_double_initialization() {
         &treasury,
         &neko_oracle,
         &reflector_oracle,
-        &1_000_000_000_000,
         &500_000,
         &1_000_000,
         &40_000,

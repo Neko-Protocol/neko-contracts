@@ -7,6 +7,10 @@ use crate::common::types::{
     AssetType, CONFIG_DELAY_SECONDS, InterestRateParams, PoolState, QueuedReserveConfig, SCALAR_7,
 };
 
+// Pool state ordinals pushed by the backstop contract.
+const POOL_STATE_ACTIVE: u32 = 0;
+const POOL_STATE_ON_ICE: u32 = 1;
+
 /// Administrative functions for the lending pool
 pub struct Admin;
 
@@ -18,7 +22,6 @@ impl Admin {
         treasury: &Address,
         neko_oracle: &Address,
         reflector_oracle: &Address,
-        backstop_threshold: i128,
         backstop_take_rate: u32,
         reserve_factor: u32,
         origination_fee_rate: u32,
@@ -43,7 +46,6 @@ impl Admin {
         Storage::set_pool_state(env, PoolState::OnIce);
         Storage::set_neko_oracle(env, neko_oracle);
         Storage::set_reflector_oracle(env, reflector_oracle);
-        Storage::set_backstop_threshold(env, backstop_threshold);
         Storage::set_backstop_take_rate(env, backstop_take_rate);
         Storage::set_treasury(env, treasury);
         Storage::set_reserve_factor(env, reserve_factor);
@@ -185,10 +187,41 @@ impl Admin {
         Storage::get_pool_state(env)
     }
 
-    /// Set backstop threshold
-    pub fn set_backstop_threshold(env: &Env, threshold: i128) {
+    /// Set the neko-backstop contract address. Admin-only.
+    /// Must be called after deploying both pool and backstop.
+    pub fn set_backstop_contract(env: &Env, backstop: &Address) {
         Self::require_admin(env);
-        Storage::set_backstop_threshold(env, threshold);
+        Storage::set_backstop_contract(env, backstop);
+    }
+
+    /// Update pool state as pushed by the registered backstop contract.
+    ///
+    /// Called automatically by neko-backstop on every deposit/withdraw/queue change.
+    /// Only the registered backstop address is allowed to call this.
+    /// State ordinals: 0 = Active, 1 = OnIce, 2+ = Frozen.
+    pub fn update_pool_state_from_backstop(env: &Env, caller: &Address, state: u32) {
+        let backstop = Storage::get_backstop_contract(env)
+            .unwrap_or_else(|| panic_with_error!(env, Error::NotAuthorized));
+        if caller != &backstop {
+            panic_with_error!(env, Error::NotAuthorized);
+        }
+        caller.require_auth();
+
+        let new_state = if state == POOL_STATE_ACTIVE {
+            PoolState::Active
+        } else if state == POOL_STATE_ON_ICE {
+            PoolState::OnIce
+        } else {
+            PoolState::Frozen
+        };
+
+        Storage::set_pool_state(env, new_state);
+    }
+
+    /// Set backstop token address — needed by interest auctions to accept bidder payments. Admin-only.
+    pub fn set_backstop_token(env: &Env, token_address: &Address) {
+        Self::require_admin(env);
+        Storage::set_backstop_token(env, token_address);
     }
 
     /// Set backstop take rate (7 decimals)
@@ -214,12 +247,6 @@ impl Admin {
         Self::require_admin(env);
         Storage::set_token_contract(env, asset, token_address);
         Storage::set_asset_type(env, asset, asset_type);
-    }
-
-    /// Set backstop token contract address
-    pub fn set_backstop_token(env: &Env, token_address: &Address) {
-        Self::require_admin(env);
-        Storage::set_backstop_token(env, token_address);
     }
 
     /// Set the treasury address

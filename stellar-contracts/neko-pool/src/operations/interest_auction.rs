@@ -141,13 +141,17 @@ impl InterestAuction {
             .checked_div(SCALAR_12)
             .ok_or(Error::ArithmeticError)?;
 
-        // Transfer backstop tokens from bidder to protocol
+        // Transfer backstop tokens from bidder to the backstop contract.
+        // The backstop contract accumulates these tokens as protocol-generated yield
+        // for its depositors.
         if backstop_to_pay > 0 {
-            if let Some(backstop_token) = Storage::get_backstop_token(env) {
+            if let (Some(backstop_token), Some(backstop_contract)) = (
+                Storage::get_backstop_token(env),
+                Storage::get_backstop_contract(env),
+            ) {
                 let backstop_client = TokenClient::new(env, &backstop_token);
-                backstop_client.transfer(bidder, &env.current_contract_address(), &backstop_to_pay);
+                backstop_client.transfer(bidder, &backstop_contract, &backstop_to_pay);
             }
-            Storage::set_backstop_total(env, Storage::get_backstop_total(env) + backstop_to_pay);
         }
 
         // Transfer interest to bidder

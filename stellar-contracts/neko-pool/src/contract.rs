@@ -3,8 +3,7 @@ use soroban_sdk::{Address, Env, Symbol, contract, contractimpl};
 use crate::admin::Admin;
 use crate::common::error::Error;
 use crate::common::storage::Storage;
-use crate::common::types::{AssetType, BackstopDeposit, InterestRateParams, PoolState};
-use crate::operations::backstop::Backstop;
+use crate::common::types::{AssetType, InterestRateParams, PoolState};
 use crate::operations::bad_debt::BadDebt;
 use crate::operations::borrowing::Borrowing;
 use crate::operations::collateral::Collateral;
@@ -26,7 +25,6 @@ impl LendingContract {
         treasury: Address,
         neko_oracle: Address,
         reflector_oracle: Address,
-        backstop_threshold: i128,
         backstop_take_rate: u32,
         reserve_factor: u32,
         origination_fee_rate: u32,
@@ -38,7 +36,6 @@ impl LendingContract {
             &treasury,
             &neko_oracle,
             &reflector_oracle,
-            backstop_threshold,
             backstop_take_rate,
             reserve_factor,
             origination_fee_rate,
@@ -82,14 +79,26 @@ impl LendingContract {
         Admin::set_pool_state(&env, state);
     }
 
-    /// Set backstop threshold
-    pub fn set_backstop_threshold(env: Env, threshold: i128) {
-        Admin::set_backstop_threshold(&env, threshold);
-    }
-
     /// Set backstop take rate
     pub fn set_backstop_take_rate(env: Env, take_rate: u32) {
         Admin::set_backstop_take_rate(&env, take_rate);
+    }
+
+    /// Set backstop token address (used by interest auctions). Admin-only.
+    pub fn set_backstop_token(env: Env, token_address: Address) {
+        Admin::set_backstop_token(&env, &token_address);
+    }
+
+    /// Register the neko-backstop contract address. Admin-only.
+    /// After registration, the backstop can call update_pool_state_from_backstop.
+    pub fn set_backstop_contract(env: Env, backstop: Address) {
+        Admin::set_backstop_contract(&env, &backstop);
+    }
+
+    /// Accept a pool state update pushed by the registered backstop contract.
+    /// State ordinal: 0 = Active, 1 = OnIce, 2+ = Frozen.
+    pub fn update_pool_state_from_backstop(env: Env, caller: Address, state: u32) {
+        Admin::update_pool_state_from_backstop(&env, &caller, state);
     }
 
     /// Set token contract address for an asset symbol
@@ -101,11 +110,6 @@ impl LendingContract {
         asset_type: AssetType,
     ) {
         Admin::set_token_contract(&env, &asset, &token_address, asset_type);
-    }
-
-    /// Set backstop token contract address
-    pub fn set_backstop_token(env: Env, token_address: Address) {
-        Admin::set_backstop_token(&env, &token_address);
     }
 
     /// Set treasury address. Admin-only.
@@ -285,33 +289,6 @@ impl LendingContract {
     /// Fill a liquidation auction
     pub fn fill_auction(env: Env, auction_id: u32, liquidator: Address) -> Result<(), Error> {
         Liquidations::fill_auction(&env, auction_id, &liquidator)
-    }
-
-    // ========== Backstop Functions ==========
-
-    /// Deposit to backstop
-    pub fn deposit_to_backstop(env: Env, depositor: Address, amount: i128) -> Result<(), Error> {
-        Backstop::deposit(&env, &depositor, amount)
-    }
-
-    /// Initiate withdrawal from backstop — enters the 17-day queue
-    pub fn initiate_withdrawal(env: Env, depositor: Address, amount: i128) -> Result<(), Error> {
-        Backstop::initiate_withdrawal(&env, &depositor, amount)
-    }
-
-    /// Withdraw from backstop (requires queue period to have elapsed)
-    pub fn withdraw_from_backstop(env: Env, depositor: Address, amount: i128) -> Result<(), Error> {
-        Backstop::withdraw(&env, &depositor, amount)
-    }
-
-    /// Get backstop token contract address
-    pub fn get_backstop_token(env: Env) -> Option<Address> {
-        Storage::get_backstop_token(&env)
-    }
-
-    /// Get backstop deposit info for a depositor
-    pub fn get_backstop_deposit(env: Env, depositor: Address) -> BackstopDeposit {
-        Backstop::get_deposit(&env, &depositor)
     }
 
     // ========== Bad Debt Auction Functions ==========
