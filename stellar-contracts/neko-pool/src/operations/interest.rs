@@ -2,6 +2,7 @@ use soroban_sdk::{Env, Symbol};
 
 use crate::common::error::Error;
 use crate::common::events::Events;
+use crate::common::reserve_cache::ReserveSink;
 use crate::common::storage::Storage;
 use crate::common::types::{InterestRateParams, ReserveData, SCALAR_7, SCALAR_12, SECONDS_PER_YEAR};
 
@@ -16,13 +17,15 @@ pub struct Interest;
 
 impl Interest {
     /// Accrue interest for an asset.
-    /// Updates b_rate, d_rate, ir_mod, and backstop_credit, then returns the updated ReserveData
-    /// so callers can reuse it without a second storage read.
-    pub fn accrue_interest(env: &Env, asset: &Symbol) -> Result<ReserveData, Error> {
+    /// Use [`ReserveCache`](crate::common::reserve_cache::ReserveCache) as `sink` to batch disk I/O with deposit/borrow/etc.
+    pub fn accrue_interest<S: ReserveSink>(
+        env: &Env,
+        asset: &Symbol,
+        sink: &mut S,
+    ) -> Result<ReserveData, Error> {
         let current_time = env.ledger().timestamp();
 
-        // Get or create reserve data
-        let mut reserve = Storage::get_reserve_data(env, asset);
+        let mut reserve = sink.load_reserve(env, asset);
 
         // No time has passed, no accrual needed
         if current_time <= reserve.last_time {
@@ -32,7 +35,7 @@ impl Interest {
         // No supply, no accrual needed
         if reserve.b_supply == 0 {
             reserve.last_time = current_time;
-            Storage::set_reserve_data(env, asset, &reserve);
+            sink.save_reserve(env, asset, &reserve);
             return Ok(reserve);
         }
 
@@ -46,7 +49,7 @@ impl Interest {
         // No borrowing, no accrual needed
         if utilization == 0 {
             reserve.last_time = current_time;
-            Storage::set_reserve_data(env, asset, &reserve);
+            sink.save_reserve(env, asset, &reserve);
             return Ok(reserve);
         }
 
@@ -73,8 +76,7 @@ impl Interest {
             current_time,
         )?;
 
-        // Save updated reserve
-        Storage::set_reserve_data(env, asset, &reserve);
+        sink.save_reserve(env, asset, &reserve);
 
         // Emit event
         Events::interest_accrued(env, asset, reserve.b_rate, reserve.d_rate, reserve.ir_mod);
@@ -336,8 +338,12 @@ impl Interest {
 
     /// Calculate utilization ratio (7 decimals)
     /// U = TotalLiabilities / TotalSupply
-    pub fn calculate_utilization(env: &Env, asset: &Symbol) -> Result<i128, Error> {
-        let reserve = Storage::get_reserve_data(env, asset);
+    pub fn calculate_utilization<S: ReserveSink>(
+        env: &Env,
+        asset: &Symbol,
+        sink: &mut S,
+    ) -> Result<i128, Error> {
+        let reserve = sink.load_reserve(env, asset);
         Self::calculate_utilization_internal(&reserve)
     }
 

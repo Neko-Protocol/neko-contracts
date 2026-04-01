@@ -269,7 +269,8 @@ impl LendingContract {
 
     /// Accrue interest for an asset
     pub fn accrue_interest(env: Env, asset: Symbol) -> Result<(), Error> {
-        Interest::accrue_interest(&env, &asset).map(|_| ())
+        let mut sink = crate::common::reserve_cache::StorageReserveSink;
+        Interest::accrue_interest(&env, &asset, &mut sink).map(|_| ())
     }
 
     // ========== Liquidation Functions ==========
