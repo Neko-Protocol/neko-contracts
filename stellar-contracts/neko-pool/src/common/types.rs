@@ -1,0 +1,511 @@
+use soroban_sdk::{Address, Map, Symbol, contracttype};
+
+// ============================================================================
+// SCALAR CONSTANTS
+// ============================================================================
+
+/// 7 decimals - Used for interest rate parameters, utilization, health factors
+/// Example: 75% = 7_500_000, 1% = 100_000
+pub const SCALAR_7: i128 = 10_000_000;
+
+/// 12 decimals - Used for bToken/dToken rates (exchange rates)
+/// Example: 1:1 rate = 1_000_000_000_000
+pub const SCALAR_12: i128 = 1_000_000_000_000;
+
+/// Seconds per year for interest calculations
+pub const SECONDS_PER_YEAR: u64 = 31_536_000; // 365 days
+
+// ============================================================================
+// TTL CONSTANTS
+// ============================================================================
+
+/// Ledgers per day (~5 seconds per ledger on Stellar)
+pub const ONE_DAY_LEDGERS: u32 = 17280;
+
+/// Instance storage TTL (contract config, admin) - 30 days
+pub const INSTANCE_TTL: u32 = ONE_DAY_LEDGERS * 30;
+pub const INSTANCE_BUMP: u32 = ONE_DAY_LEDGERS * 31;
+
+/// User storage TTL (positions, balances, CDPs) - 100 days
+pub const USER_TTL: u32 = ONE_DAY_LEDGERS * 100;
+pub const USER_BUMP: u32 = ONE_DAY_LEDGERS * 120;
+
+// ============================================================================
+// HEALTH FACTOR CONSTANTS (7 decimals)
+// ============================================================================
+
+/// Health factor representing 1.0 (no margin)
+#[allow(dead_code)]
+pub const HEALTH_FACTOR_ONE: i128 = 10_000_000; // 1.0
+
+/// Minimum health factor after borrow/remove_collateral operations
+/// Ensures CDPs maintain safety margin above liquidation threshold
+pub const MIN_HEALTH_FACTOR: i128 = 11_000_000; // 1.1 = 110%
+
+/// Maximum health factor after liquidation
+/// Prevents over-liquidation that would leave borrower with excess collateral
+pub const MAX_HEALTH_FACTOR: i128 = 11_500_000; // 1.15 = 115%
+
+// ============================================================================
+// AUCTION CONSTANTS
+// ============================================================================
+
+/// Auction duration in blocks (for Dutch auctions)
+/// ~17 minutes on Stellar (200 blocks * ~5 sec/block)
+pub const AUCTION_DURATION_BLOCKS: u32 = 200;
+
+/// Maximum blocks before auction is considered stale and can be deleted
+#[allow(dead_code)]
+pub const AUCTION_MAX_BLOCKS: u32 = 500;
+
+/// Config change timelock — 7 days in seconds. Reserve param changes must wait this long.
+pub const CONFIG_DELAY_SECONDS: u64 = 7 * 24 * 60 * 60;
+
+/// Queued config TTL — 14 days in ledgers. Auto-expires if admin never applies it.
+pub const QUEUED_CONFIG_TTL: u32 = ONE_DAY_LEDGERS * 14;
+pub const QUEUED_CONFIG_BUMP: u32 = QUEUED_CONFIG_TTL + ONE_DAY_LEDGERS;
+
+/// Admin proposal TTL — 7 days in ledgers. Proposed admin must accept within this window.
+pub const PROPOSAL_TTL: u32 = ONE_DAY_LEDGERS * 7;
+pub const PROPOSAL_BUMP: u32 = PROPOSAL_TTL + ONE_DAY_LEDGERS;
+
+/// Auction temporary storage TTL — 7 days in ledgers.
+/// Auctions that are never filled auto-expire after this window.
+pub const AUCTION_TTL: u32 = ONE_DAY_LEDGERS * 7;
+pub const AUCTION_BUMP: u32 = AUCTION_TTL + ONE_DAY_LEDGERS;
+
+// ============================================================================
+// FEE CONSTANTS (7 decimals)
+// ============================================================================
+
+/// Reserve factor: 10% of interest goes to treasury
+#[allow(dead_code)]
+pub const DEFAULT_RESERVE_FACTOR: u32 = 1_000_000;
+
+/// Origination fee: 0.4% charged on borrow
+#[allow(dead_code)]
+pub const DEFAULT_ORIGINATION_FEE_RATE: u32 = 40_000;
+
+/// Liquidation fee: 1% of collateral received goes to treasury
+#[allow(dead_code)]
+pub const DEFAULT_LIQUIDATION_FEE_RATE: u32 = 100_000;
+
+/// Bad debt auction lot multiplier (120% = 1.2x safety margin)
+/// 7 decimals: 12_000_000 = 1.2
+#[allow(dead_code)]
+pub const BAD_DEBT_LOT_MULTIPLIER: i128 = 12_000_000;
+
+// ============================================================================
+// ASSET TYPE
+// ============================================================================
+
+/// Determines which oracle to use for price queries.
+/// - Crypto: uses the Reflector oracle (USDC, XLM, etc.)
+/// - Rwa: uses the RWA oracle (USDY, CETES, etc.)
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum AssetType {
+    Crypto,
+    Rwa,
+}
+
+// ============================================================================
+// POOL STATE
+// ============================================================================
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum PoolState {
+    Active, // All operations enabled
+    OnIce,  // Only borrowing disabled
+    Frozen, // Both borrowing and depositing disabled
+}
+
+/// Arguments for [`crate::contract::LendingContract::__constructor`] (factory `deploy_v2` + tests).
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PoolInitConfig {
+    pub admin: Address,
+    pub treasury: Address,
+    pub neko_oracle: Address,
+    pub reflector_oracle: Address,
+    pub backstop_take_rate: u32,
+    pub reserve_factor: u32,
+    pub origination_fee_rate: u32,
+    pub liquidation_fee_rate: u32,
+}
+
+// ============================================================================
+// INTEREST RATE PARAMETERS
+// ============================================================================
+
+/// Interest rate parameters for a reserve
+/// All values in 7 decimals (SCALAR_7)
+///
+/// Example configuration for USDC:
+/// ```
+/// InterestRateParams {
+///     target_util: 7_500_000,    // 75%
+///     max_util: 9_500_000,       // 95%
+///     r_base: 100_000,           // 1% base rate
+///     r_one: 500_000,            // 5% slope to target
+///     r_two: 5_000_000,          // 50% slope to max
+///     r_three: 15_000_000,       // 150% slope above max
+///     reactivity: 200,           // 0.00002 reactivity
+/// }
+/// ```
+#[contracttype]
+#[derive(Clone, Debug)]
+pub struct InterestRateParams {
+    /// Target utilization rate (7 decimals, e.g., 7_500_000 = 75%)
+    pub target_util: u32,
+
+    /// Maximum utilization rate before extreme rates kick in (7 decimals, e.g., 9_500_000 = 95%)
+    pub max_util: u32,
+
+    /// Base interest rate R0 (7 decimals, always applied)
+    pub r_base: u32,
+
+    /// Interest rate slope R1 (7 decimals, applied up to target_util)
+    pub r_one: u32,
+
+    /// Interest rate slope R2 (7 decimals, applied from target_util to max_util)
+    pub r_two: u32,
+
+    /// Interest rate slope R3 (7 decimals, applied above max_util)
+    pub r_three: u32,
+
+    /// Reactivity constant for rate modifier adjustment (7 decimals)
+    pub reactivity: u32,
+
+    /// Liability factor (7 decimals, e.g. 8_000_000 = 80%)
+    /// Applied to debt when computing health factor and borrow limits:
+    ///   effective_debt = debt_usd * SCALAR_7 / l_factor
+    /// Lower l_factor → stricter (debt counts as larger). Default: SCALAR_7 (1.0 = no change).
+    pub l_factor: u32,
+
+    /// Maximum underlying tokens the reserve can hold (0 = unlimited)
+    pub supply_cap: i128,
+
+    /// Whether this reserve accepts new deposits and borrows
+    pub enabled: bool,
+}
+
+/// A queued change to a reserve's interest rate parameters.
+/// Stored in temporary storage; applies only after unlock_time has passed.
+#[contracttype]
+#[derive(Clone, Debug)]
+pub struct QueuedReserveConfig {
+    pub new_params: InterestRateParams,
+    /// Unix timestamp after which the change can be applied
+    pub unlock_time: u64,
+}
+
+// ============================================================================
+// RESERVE DATA
+// ============================================================================
+
+/// Reserve state data for an asset
+/// Token rates use 12 decimals (SCALAR_12)
+#[contracttype]
+#[derive(Clone, Debug)]
+pub struct ReserveData {
+    /// bToken to underlying conversion rate (12 decimals)
+    /// underlying = b_tokens * b_rate / SCALAR_12
+    pub b_rate: i128,
+
+    /// dToken to underlying conversion rate (12 decimals)
+    /// underlying = d_tokens * d_rate / SCALAR_12
+    pub d_rate: i128,
+
+    /// Interest rate modifier (7 decimals)
+    /// Adjusts dynamically based on utilization vs target
+    /// Range: SCALAR_7 / 10 to SCALAR_7 * 10 (0.1x to 10x)
+    pub ir_mod: i128,
+
+    /// Total bToken supply
+    pub b_supply: i128,
+
+    /// Total dToken supply
+    pub d_supply: i128,
+
+    /// Interest owed to backstop (accumulated)
+    pub backstop_credit: i128,
+
+    /// Fees owed to treasury (accumulated: reserve factor + origination fees)
+    pub treasury_credit: i128,
+
+    /// Last interest accrual timestamp
+    pub last_time: u64,
+}
+
+impl ReserveData {
+    /// Create new reserve data with initial 1:1 rates
+    pub fn new(timestamp: u64) -> Self {
+        Self {
+            b_rate: SCALAR_12, // 1:1 initial rate
+            d_rate: SCALAR_12, // 1:1 initial rate
+            ir_mod: SCALAR_7,  // 1.0 initial modifier
+            b_supply: 0,
+            d_supply: 0,
+            backstop_credit: 0,
+            treasury_credit: 0,
+            last_time: timestamp,
+        }
+    }
+}
+
+// ============================================================================
+// CDP (Collateralized Debt Position)
+// ============================================================================
+
+#[contracttype]
+#[derive(Clone, Debug)]
+pub struct CDP {
+    /// Collateral (RWA tokens): token address -> amount
+    pub collateral: Map<Address, i128>,
+
+    /// Debt asset symbol (only one: USDC, XLM, etc.)
+    pub debt_asset: Option<Symbol>,
+
+    /// dTokens of the borrowed asset
+    pub d_tokens: i128,
+
+    /// Creation timestamp
+    pub created_at: u64,
+
+    /// Last update timestamp
+    pub last_update: u64,
+}
+
+// ============================================================================
+// AUCTION TYPES
+// ============================================================================
+
+/// Type of auction
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum AuctionType {
+    /// Liquidate unhealthy user positions
+    UserLiquidation = 0,
+    /// Auction backstop's bad debt
+    BadDebt = 1,
+    /// Distribute accrued interest to backstop
+    Interest = 2,
+}
+
+/// Dutch Auction data structure (unified for all auction types)
+#[contracttype]
+#[derive(Clone, Debug)]
+pub struct AuctionData {
+    /// Type of auction
+    pub auction_type: AuctionType,
+
+    /// The user associated with this auction
+    /// For UserLiquidation: the borrower being liquidated
+    /// For BadDebt: the borrower with bad debt
+    /// For Interest: the contract itself (protocol)
+    pub user: Address,
+
+    /// Assets/tokens being bid (what filler pays)
+    /// For UserLiquidation: debt tokens
+    /// For BadDebt: underlying debt asset
+    /// For Interest: backstop tokens
+    pub bid: Map<Address, i128>,
+
+    /// Assets/tokens being auctioned (what filler receives)
+    /// For UserLiquidation: collateral tokens
+    /// For BadDebt: backstop tokens
+    /// For Interest: interest tokens
+    pub lot: Map<Address, i128>,
+
+    /// Auction start block
+    pub block: u32,
+}
+
+// ============================================================================
+// ORACLE TYPES
+// ============================================================================
+
+/// Price data from oracle (SEP-40 compatible)
+#[contracttype]
+#[derive(Clone, Debug)]
+pub struct PriceData {
+    pub price: i128,
+    pub timestamp: u64,
+}
+
+// ============================================================================
+// ROUNDING HELPERS (12 decimals)
+// ============================================================================
+
+#[allow(dead_code)]
+pub mod rounding {
+    use soroban_fixed_point_math::SorobanFixedPoint;
+    use soroban_sdk::Env;
+
+    use super::{SCALAR_7, SCALAR_12};
+    use crate::common::error::Error;
+
+    /// Convert underlying asset amount to bTokens with rounding down (floor)
+    /// Used when depositing: favors the protocol (mints fewer bTokens)
+    /// Formula: b_tokens = floor(amount * SCALAR_12 / b_rate)
+    pub fn to_b_token_down(env: &Env, amount: i128, b_rate: i128) -> Result<i128, Error> {
+        if b_rate <= 0 {
+            return Err(Error::ArithmeticError);
+        }
+        Ok(amount.fixed_mul_floor(env, &SCALAR_12, &b_rate))
+    }
+
+    /// Convert underlying asset amount to bTokens with rounding up (ceil)
+    /// Used when withdrawing: favors the protocol (burns more bTokens)
+    /// Formula: b_tokens = ceil(amount * SCALAR_12 / b_rate)
+    pub fn to_b_token_up(env: &Env, amount: i128, b_rate: i128) -> Result<i128, Error> {
+        if b_rate <= 0 {
+            return Err(Error::ArithmeticError);
+        }
+        Ok(amount.fixed_mul_ceil(env, &SCALAR_12, &b_rate))
+    }
+
+    /// Convert bTokens to underlying asset amount with rounding down (floor)
+    /// Used when calculating withdrawable amount
+    /// Formula: underlying = floor(b_tokens * b_rate / SCALAR_12)
+    pub fn to_underlying_from_b_token(env: &Env, b_tokens: i128, b_rate: i128) -> Result<i128, Error> {
+        Ok(b_tokens.fixed_mul_floor(env, &b_rate, &SCALAR_12))
+    }
+
+    /// Convert underlying asset amount to dTokens with rounding up (ceil)
+    /// Used when borrowing: favors the protocol (mints more dTokens)
+    /// Formula: d_tokens = ceil(amount * SCALAR_12 / d_rate)
+    pub fn to_d_token_up(env: &Env, amount: i128, d_rate: i128) -> Result<i128, Error> {
+        if d_rate <= 0 {
+            return Err(Error::ArithmeticError);
+        }
+        Ok(amount.fixed_mul_ceil(env, &SCALAR_12, &d_rate))
+    }
+
+    /// Convert underlying asset amount to dTokens with rounding down (floor)
+    /// Used when repaying: favors the protocol (burns fewer dTokens)
+    /// Formula: d_tokens = floor(amount * SCALAR_12 / d_rate)
+    pub fn to_d_token_down(env: &Env, amount: i128, d_rate: i128) -> Result<i128, Error> {
+        if d_rate <= 0 {
+            return Err(Error::ArithmeticError);
+        }
+        Ok(amount.fixed_mul_floor(env, &SCALAR_12, &d_rate))
+    }
+
+    /// Convert dTokens to underlying debt amount with rounding up (ceil)
+    /// Used when calculating total debt owed
+    /// Formula: underlying = ceil(d_tokens * d_rate / SCALAR_12)
+    pub fn to_underlying_from_d_token(env: &Env, d_tokens: i128, d_rate: i128) -> Result<i128, Error> {
+        Ok(d_tokens.fixed_mul_ceil(env, &d_rate, &SCALAR_12))
+    }
+
+    /// Multiply two values with 7 decimal precision
+    /// Result = (a * b) / SCALAR_7
+    pub fn mul_scalar_7(env: &Env, a: i128, b: i128) -> Result<i128, Error> {
+        Ok(a.fixed_mul_floor(env, &b, &SCALAR_7))
+    }
+
+    /// Same as [`mul_scalar_7`] but rounded up — fees charged to users (favors protocol).
+    pub fn mul_scalar_7_ceil(env: &Env, a: i128, b: i128) -> Result<i128, Error> {
+        Ok(a.fixed_mul_ceil(env, &b, &SCALAR_7))
+    }
+
+    /// Divide two values with 7 decimal precision
+    /// Result = (a * SCALAR_7) / b
+    pub fn div_scalar_7(env: &Env, a: i128, b: i128) -> Result<i128, Error> {
+        if b == 0 {
+            return Err(Error::ArithmeticError);
+        }
+        Ok(a.fixed_mul_floor(env, &SCALAR_7, &b))
+    }
+
+    /// ceil((a * b) / divisor); divisor must be positive (e.g. l_factor).
+    pub fn mul_div_ceil(env: &Env, a: i128, b: i128, divisor: i128) -> Result<i128, Error> {
+        if divisor <= 0 {
+            return Err(Error::ArithmeticError);
+        }
+        Ok(a.fixed_mul_ceil(env, &b, &divisor))
+    }
+
+    /// floor((a * b) / divisor); divisor must be positive.
+    pub fn mul_div_floor(env: &Env, a: i128, b: i128, divisor: i128) -> Result<i128, Error> {
+        if divisor <= 0 {
+            return Err(Error::ArithmeticError);
+        }
+        Ok(a.fixed_mul_floor(env, &b, &divisor))
+    }
+}
+
+// ============================================================================
+// SHARED STORAGE TTL (reserve data, pool balances, auctions)
+// ============================================================================
+
+pub const SHARED_TTL: u32 = ONE_DAY_LEDGERS * 45;
+pub const SHARED_BUMP: u32 = ONE_DAY_LEDGERS * 46;
+
+// ============================================================================
+// COMPOSITE KEY STRUCTS
+// ============================================================================
+
+/// Key for per-user per-asset data (bTokens, dTokens)
+#[contracttype]
+#[derive(Clone)]
+pub struct UserAssetKey {
+    pub user: Address,
+    pub asset: Symbol,
+}
+
+// ============================================================================
+// STORAGE KEYS
+// ============================================================================
+
+/// Typed storage keys for the lending pool.
+///
+/// Layout:
+/// - Instance storage          : fixed-size scalar config (Admin, PoolState, fee rates, oracles)
+/// - Persistent SHARED per-entry: per-asset config set by admin (CollateralFactor, TokenContract…)
+///   and per-asset state (PoolBalance, ReserveData, InterestRateParams, Auction)
+/// - Persistent USER per-entry : per-user positions (BTokenBalance, DTokenBalance, Cdp)
+#[contracttype]
+#[derive(Clone)]
+pub enum DataKey {
+    // ---- Instance storage (lean config — fixed-size scalars only) ----
+    Admin,
+    PoolState,
+    NekoOracle,
+    ReflectorOracle,
+    BackstopContract,
+    BackstopToken,
+    BackstopTakeRate,
+    Treasury,
+    ReserveFactor,
+    OriginationFeeRate,
+    LiquidationFeeRate,
+
+    // ---- Persistent storage (per-asset config, SHARED_TTL — set by admin) ----
+    TokenContract(Symbol),
+    AssetType(Symbol),
+    CollateralAssetType(Address),
+    CollateralSymbol(Address),
+    CollateralFactor(Address),
+
+    // ---- Persistent storage (per-asset state, SHARED_TTL) ----
+    PoolBalance(Symbol),
+    ReserveData(Symbol),
+    InterestRateParams(Symbol),
+
+    // ---- Persistent storage (per user, USER_TTL) ----
+    BTokenBalance(UserAssetKey),
+    DTokenBalance(UserAssetKey),
+    Cdp(Address),
+
+    // ---- Temporary storage (auto-expires) ----
+    // Unfilled auctions are garbage-collected automatically by Soroban.
+    Auction(u32),
+    // Pending admin proposal — expires after PROPOSAL_TTL if not accepted.
+    ProposedAdmin,
+    // Queued reserve config change — expires after QUEUED_CONFIG_TTL if never applied.
+    QueuedReserveConfig(Symbol),
+}

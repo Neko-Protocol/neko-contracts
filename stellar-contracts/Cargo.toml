@@ -1,15 +1,18 @@
 [workspace]
 resolver = "2"
 members = [
-  "rwa-lending",
-  "rwa-oracle",
-  "rwa-token",
-  "rwa-vault",
-  "rwa-faucet",
-  "adapters/adapter-rwa-lending",
+  "neko-pool",
+  "neko-factory",
+  "neko-backstop",
+  "neko-oracle",
+  "neko-token",
+  "neko-vault",
+  "neko-faucet",
+  "adapters/adapter-neko",
   "adapters/adapter-blend",
   "adapters/adapter-soroswap",
-  "adapters/adapter-aquarius"
+  "adapters/adapter-aquarius",
+  "test-suites",
 ]
 
 [workspace.package]
@@ -20,7 +23,8 @@ repository = "https://github.com/Neko-Protocol"
 version = "0.0.1"
 
 [workspace.dependencies]
-soroban-sdk = "23.0.4"
+soroban-sdk = "25.3.0"
+soroban-fixed-point-math = "1.5.0"
 
 [profile.release]
 opt-level = "z"

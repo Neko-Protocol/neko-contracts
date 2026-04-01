@@ -1,0 +1,52 @@
+[package]
+name = "neko-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2024"
+
+[package.metadata]
+cargo-fuzz = true
+
+[lib]
+name = "fuzz_common"
+path = "lib.rs"
+
+[[bin]]
+name = "fuzz_pool_general"
+path = "fuzz_targets/fuzz_pool_general.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "fuzz_backstop"
+path = "fuzz_targets/fuzz_backstop.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "fuzz_liquidation"
+path = "fuzz_targets/fuzz_liquidation.rs"
+test = false
+doc = false
+
+[dependencies]
+libfuzzer-sys = "0.4"
+soroban-sdk = { version = "25.3.0", features = ["testutils"] }
+
+[dependencies.test-suites]
+path = ".."
+
+[dependencies.neko-pool]
+path = "../../neko-pool"
+features = ["testutils"]
+
+[dependencies.neko-backstop]
+path = "../../neko-backstop"
+features = ["testutils"]
+
+# Separate workspace — prevents interference with the main stellar-contracts workspace
+[workspace]
+members = ["."]
+
+[profile.release]
+debug = 1

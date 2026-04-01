@@ -4,7 +4,7 @@ use soroban_sdk::{contracttype, Address};
 #[contracttype]
 #[derive(Clone, Debug)]
 pub struct AdapterStorage {
-    /// rwa-vault contract — authorized caller for a_deposit / a_withdraw / a_harvest
+    /// neko-vault contract — authorized caller for a_deposit / a_withdraw / a_harvest
     pub vault: Address,
     /// Aquarius pool contract (called directly for swap, deposit, withdraw, claim)
     pub pool: Address,

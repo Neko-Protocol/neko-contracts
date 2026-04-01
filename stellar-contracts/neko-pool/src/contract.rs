@@ -1,0 +1,366 @@
+use soroban_sdk::{Address, Env, Symbol, contract, contractimpl};
+
+use crate::admin::Admin;
+use crate::common::error::Error;
+use crate::common::storage::Storage;
+use crate::common::types::{AssetType, InterestRateParams, PoolInitConfig, PoolState};
+use crate::operations::bad_debt::BadDebt;
+use crate::operations::borrowing::Borrowing;
+use crate::operations::collateral::Collateral;
+use crate::operations::interest::Interest;
+use crate::operations::interest_auction::InterestAuction;
+use crate::operations::lending::Lending;
+use crate::operations::liquidations::Liquidations;
+
+/// Main lending contract implementation
+#[contract]
+pub struct LendingContract;
+
+#[contractimpl]
+impl LendingContract {
+    /// One-time setup at deploy (`register` with args in tests / `deploy_v2` from `neko-factory`).
+    pub fn __constructor(env: Env, config: PoolInitConfig) {
+        config.admin.require_auth();
+        Admin::initialize(
+            &env,
+            &config.admin,
+            &config.treasury,
+            &config.neko_oracle,
+            &config.reflector_oracle,
+            config.backstop_take_rate,
+            config.reserve_factor,
+            config.origination_fee_rate,
+            config.liquidation_fee_rate,
+        );
+    }
+
+    // ========== Admin Functions ==========
+
+    /// Set collateral factor for a token
+    /// asset_type: Rwa for RWA tokens (uses RWA oracle), Crypto for stable/crypto tokens (uses Reflector oracle)
+    /// symbol: the asset symbol used for oracle queries (e.g. symbol_short!("USDC"))
+    pub fn set_collateral_factor(
+        env: Env,
+        token: Address,
+        factor: u32,
+        asset_type: AssetType,
+        symbol: Symbol,
+    ) {
+        Admin::set_collateral_factor(&env, &token, factor, asset_type, symbol);
+    }
+
+    /// Queue a change to reserve interest rate parameters (step 1).
+    /// 7-day timelock unless pool is OnIce.
+    pub fn queue_set_reserve_params(env: Env, asset: Symbol, params: InterestRateParams) {
+        Admin::queue_set_reserve_params(&env, &asset, &params);
+    }
+
+    /// Apply a queued reserve param change after the timelock expires (step 2).
+    pub fn apply_queued_reserve_params(env: Env, asset: Symbol) {
+        Admin::apply_queued_reserve_params(&env, &asset);
+    }
+
+    /// Cancel a queued reserve param change before it is applied.
+    pub fn cancel_queued_reserve_params(env: Env, asset: Symbol) {
+        Admin::cancel_queued_reserve_params(&env, &asset);
+    }
+
+    /// Set pool state
+    pub fn set_pool_state(env: Env, state: PoolState) {
+        Admin::set_pool_state(&env, state);
+    }
+
+    /// Set backstop take rate
+    pub fn set_backstop_take_rate(env: Env, take_rate: u32) {
+        Admin::set_backstop_take_rate(&env, take_rate);
+    }
+
+    /// Set backstop token address (used by interest auctions). Admin-only.
+    pub fn set_backstop_token(env: Env, token_address: Address) {
+        Admin::set_backstop_token(&env, &token_address);
+    }
+
+    /// Register the neko-backstop contract address. Admin-only.
+    /// After registration, the backstop can call update_pool_state_from_backstop.
+    pub fn set_backstop_contract(env: Env, backstop: Address) {
+        Admin::set_backstop_contract(&env, &backstop);
+    }
+
+    /// Accept a pool state update pushed by the registered backstop contract.
+    /// State ordinal: 0 = Active, 1 = OnIce, 2+ = Frozen.
+    pub fn update_pool_state_from_backstop(env: Env, caller: Address, state: u32) {
+        Admin::update_pool_state_from_backstop(&env, &caller, state);
+    }
+
+    /// Set token contract address for an asset symbol
+    /// asset_type: Rwa for RWA tokens (uses RWA oracle), Crypto for stable/crypto tokens (uses Reflector oracle)
+    pub fn set_token_contract(
+        env: Env,
+        asset: Symbol,
+        token_address: Address,
+        asset_type: AssetType,
+    ) {
+        Admin::set_token_contract(&env, &asset, &token_address, asset_type);
+    }
+
+    /// Set treasury address. Admin-only.
+    pub fn set_treasury(env: Env, treasury: Address) {
+        Admin::set_treasury(&env, &treasury);
+    }
+
+    /// Get treasury address
+    pub fn get_treasury(env: Env) -> Address {
+        Admin::get_treasury(&env)
+    }
+
+    /// Set reserve factor (7 decimals, e.g. 1_000_000 = 10%). Admin-only.
+    pub fn set_reserve_factor(env: Env, reserve_factor: u32) {
+        Admin::set_reserve_factor(&env, reserve_factor);
+    }
+
+    /// Set origination fee rate (7 decimals, e.g. 40_000 = 0.4%). Admin-only.
+    pub fn set_origination_fee_rate(env: Env, origination_fee_rate: u32) {
+        Admin::set_origination_fee_rate(&env, origination_fee_rate);
+    }
+
+    /// Set liquidation fee rate (7 decimals, e.g. 100_000 = 1%). Admin-only.
+    pub fn set_liquidation_fee_rate(env: Env, liquidation_fee_rate: u32) {
+        Admin::set_liquidation_fee_rate(&env, liquidation_fee_rate);
+    }
+
+    /// Collect accumulated treasury fees for an asset and transfer to treasury address. Admin-only.
+    pub fn collect_treasury_fees(env: Env, asset: Symbol) -> Result<i128, Error> {
+        Admin::collect_treasury_fees(&env, &asset)
+    }
+
+    /// Get accumulated treasury fees (not yet collected) for an asset.
+    pub fn get_treasury_credit(env: Env, asset: Symbol) -> i128 {
+        Admin::get_treasury_credit(&env, &asset)
+    }
+
+    /// Upgrade the contract to a new WASM hash
+    /// Only the admin can call this function
+    pub fn upgrade(env: Env, new_wasm_hash: soroban_sdk::BytesN<32>) {
+        Admin::upgrade(&env, &new_wasm_hash);
+    }
+
+    /// Step 1 of admin transfer: current admin proposes a new admin address.
+    /// The proposal is stored in temporary storage and expires after 7 days.
+    pub fn propose_admin(env: Env, proposed: Address) {
+        Admin::propose_admin(&env, &proposed);
+    }
+
+    /// Step 2 of admin transfer: proposed address accepts and becomes the new admin.
+    pub fn accept_admin(env: Env) {
+        Admin::accept_admin(&env);
+    }
+
+    // ========== Lending Functions (bTokens) ==========
+
+    /// Deposit crypto asset to the pool
+    pub fn deposit(env: Env, lender: Address, asset: Symbol, amount: i128) -> Result<i128, Error> {
+        Lending::deposit(&env, &lender, &asset, amount)
+    }
+
+    /// Withdraw crypto asset from the pool
+    pub fn withdraw(
+        env: Env,
+        lender: Address,
+        asset: Symbol,
+        b_tokens: i128,
+    ) -> Result<i128, Error> {
+        Lending::withdraw(&env, &lender, &asset, b_tokens)
+    }
+
+    /// Get bToken balance for a lender
+    pub fn get_b_token_balance(env: Env, lender: Address, asset: Symbol) -> i128 {
+        Lending::get_b_token_balance(&env, &lender, &asset)
+    }
+
+    /// Get bTokenRate for an asset
+    pub fn get_b_token_rate(env: Env, asset: Symbol) -> i128 {
+        Lending::get_b_token_rate(&env, &asset)
+    }
+
+    /// Get total bToken supply for an asset
+    pub fn get_b_token_supply(env: Env, asset: Symbol) -> i128 {
+        Lending::get_b_token_supply(&env, &asset)
+    }
+
+    /// Get total dToken supply for an asset
+    pub fn get_d_token_supply(env: Env, asset: Symbol) -> i128 {
+        Storage::get_d_token_supply(&env, &asset)
+    }
+
+    // ========== Borrowing Functions (dTokens) ==========
+
+    /// Borrow crypto asset from the pool
+    pub fn borrow(env: Env, borrower: Address, asset: Symbol, amount: i128) -> Result<i128, Error> {
+        Borrowing::borrow(&env, &borrower, &asset, amount)
+    }
+
+    /// Repay debt
+    pub fn repay(
+        env: Env,
+        borrower: Address,
+        asset: Symbol,
+        d_tokens: i128,
+    ) -> Result<i128, Error> {
+        Borrowing::repay(&env, &borrower, &asset, d_tokens)
+    }
+
+    /// Get dToken balance for a borrower
+    pub fn get_d_token_balance(env: Env, borrower: Address, asset: Symbol) -> i128 {
+        Borrowing::get_d_token_balance(&env, &borrower, &asset)
+    }
+
+    /// Get dTokenRate for an asset
+    pub fn get_d_token_rate(env: Env, asset: Symbol) -> i128 {
+        Borrowing::get_d_token_rate(&env, &asset)
+    }
+
+    /// Calculate borrow limit for a borrower
+    pub fn calculate_borrow_limit(env: Env, borrower: Address) -> Result<i128, Error> {
+        Borrowing::calculate_borrow_limit(&env, &borrower)
+    }
+
+    // ========== Collateral Functions ==========
+
+    /// Add RWA token collateral
+    pub fn add_collateral(
+        env: Env,
+        borrower: Address,
+        neko_token: Address,
+        amount: i128,
+    ) -> Result<(), Error> {
+        Collateral::add_collateral(&env, &borrower, &neko_token, amount)
+    }
+
+    /// Remove RWA token collateral
+    pub fn remove_collateral(
+        env: Env,
+        borrower: Address,
+        neko_token: Address,
+        amount: i128,
+    ) -> Result<(), Error> {
+        Collateral::remove_collateral(&env, &borrower, &neko_token, amount)
+    }
+
+    /// Get collateral amount for a borrower and RWA token
+    pub fn get_collateral(env: Env, borrower: Address, neko_token: Address) -> i128 {
+        Collateral::get_collateral(&env, &borrower, &neko_token)
+    }
+
+    // ========== Interest Functions ==========
+
+    /// Get current interest rate for an asset
+    pub fn get_interest_rate(env: Env, asset: Symbol) -> Result<i128, Error> {
+        Interest::get_interest_rate(&env, &asset)
+    }
+
+    /// Accrue interest for an asset
+    pub fn accrue_interest(env: Env, asset: Symbol) -> Result<(), Error> {
+        let mut sink = crate::common::reserve_cache::StorageReserveSink;
+        Interest::accrue_interest(&env, &asset, &mut sink).map(|_| ())
+    }
+
+    // ========== Liquidation Functions ==========
+
+    /// Initiate liquidation for a borrower
+    pub fn initiate_liquidation(
+        env: Env,
+        borrower: Address,
+        neko_token: Address,
+        debt_asset: Symbol,
+        liquidation_percent: u32,
+    ) -> Result<u32, Error> {
+        Liquidations::initiate_liquidation(
+            &env,
+            &borrower,
+            &neko_token,
+            &debt_asset,
+            liquidation_percent,
+        )
+    }
+
+    /// Fill a liquidation auction
+    pub fn fill_auction(env: Env, auction_id: u32, liquidator: Address) -> Result<(), Error> {
+        Liquidations::fill_auction(&env, auction_id, &liquidator)
+    }
+
+    // ========== Bad Debt Auction Functions ==========
+
+    /// Create a bad debt auction for uncovered debt
+    pub fn create_bad_debt_auction(
+        env: Env,
+        borrower: Address,
+        debt_asset: Symbol,
+    ) -> Result<u32, Error> {
+        BadDebt::create_bad_debt_auction(&env, &borrower, &debt_asset)
+    }
+
+    /// Fill a bad debt auction
+    pub fn fill_bad_debt_auction(
+        env: Env,
+        auction_id: u32,
+        bidder: Address,
+        amount: i128,
+    ) -> Result<i128, Error> {
+        BadDebt::fill_bad_debt_auction(&env, auction_id, &bidder, amount)
+    }
+
+    /// Check if a borrower has bad debt
+    pub fn has_bad_debt(env: Env, borrower: Address) -> bool {
+        BadDebt::has_bad_debt(&env, &borrower)
+    }
+
+    // ========== Interest Auction Functions ==========
+
+    /// Create an interest auction for accumulated protocol interest
+    pub fn create_interest_auction(env: Env, asset: Symbol) -> Result<u32, Error> {
+        InterestAuction::create_interest_auction(&env, &asset)
+    }
+
+    /// Fill an interest auction
+    pub fn fill_interest_auction(
+        env: Env,
+        auction_id: u32,
+        bidder: Address,
+        asset: Symbol,
+        fill_percent: i128,
+    ) -> Result<(i128, i128), Error> {
+        InterestAuction::fill_interest_auction(&env, auction_id, &bidder, &asset, fill_percent)
+    }
+
+    /// Get accumulated interest for an asset
+    pub fn get_accumulated_interest(env: Env, asset: Symbol) -> i128 {
+        InterestAuction::get_accumulated_interest(&env, &asset)
+    }
+
+    /// Check if an interest auction can be created
+    pub fn can_create_interest_auction(env: Env, asset: Symbol) -> bool {
+        InterestAuction::can_create_auction(&env, &asset)
+    }
+
+    // ========== View Functions ==========
+
+    /// Get pool balance for an asset
+    pub fn get_pool_balance(env: Env, asset: Symbol) -> i128 {
+        Storage::get_pool_balance(&env, &asset)
+    }
+
+    /// Get pool state
+    pub fn get_pool_state(env: Env) -> PoolState {
+        Admin::get_pool_state(&env)
+    }
+
+    /// Get collateral factor for an RWA token
+    pub fn get_collateral_factor(env: Env, neko_token: Address) -> u32 {
+        Admin::get_collateral_factor(&env, &neko_token)
+    }
+
+    /// Calculate health factor for a borrower (7 decimals)
+    pub fn calculate_health_factor(env: Env, borrower: Address) -> Result<u32, Error> {
+        Liquidations::calculate_health_factor(&env, &borrower)
+    }
+}
