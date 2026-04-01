@@ -23,6 +23,12 @@ path = "fuzz_targets/fuzz_backstop.rs"
 test = false
 doc = false
 
+[[bin]]
+name = "fuzz_liquidation"
+path = "fuzz_targets/fuzz_liquidation.rs"
+test = false
+doc = false
+
 [dependencies]
 libfuzzer-sys = "0.4"
 soroban-sdk = { version = "25.3.0", features = ["testutils"] }

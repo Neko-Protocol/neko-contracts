@@ -51,6 +51,13 @@ pub struct NatI128(
     pub i128,
 );
 
+/// Borrower used as liquidation target.
+#[derive(Arbitrary, Debug, Clone, Copy)]
+pub enum LiquidationVictim {
+    Alice,
+    Bob,
+}
+
 /// Which debt asset to operate on.
 #[derive(Arbitrary, Debug, Clone, Copy)]
 pub enum DebtAsset {
@@ -113,6 +120,15 @@ pub struct Repay {
 #[derive(Arbitrary, Debug)]
 pub struct PassTime {
     pub amount: u64,
+}
+
+/// Start a Dutch liquidation auction (`initiate_liquidation`).
+#[derive(Arbitrary, Debug)]
+pub struct InitiateLiquidation {
+    pub victim: LiquidationVictim,
+    pub debt_asset: DebtAsset,
+    #[arbitrary(with = |u: &mut Unstructured| u.int_in_range(1_000_000u32..=10_000_000u32))]
+    pub liquidation_percent: u32,
 }
 
 // ── Backstop commands ─────────────────────────────────────────────────────────
@@ -195,6 +211,42 @@ impl PassTime {
     pub fn run(&self, fixture: &NekoFixture<'_>) {
         let secs = self.amount % (30 * 24 * 60 * 60);
         fixture.jump(secs);
+    }
+}
+
+impl InitiateLiquidation {
+    pub fn run(&self, fixture: &NekoFixture<'_>, pending_auction: &mut Option<u32>) {
+        let borrower = match self.victim {
+            LiquidationVictim::Alice => fixture.alice.clone(),
+            LiquidationVictim::Bob => fixture.bob.clone(),
+        };
+        let sym = self.debt_asset.symbol(fixture);
+        let r = fixture.pool.try_initiate_liquidation(
+            &borrower,
+            &fixture.bond.address,
+            sym,
+            &self.liquidation_percent,
+        );
+        verify_contract_result(&fixture.env, &r);
+        if let Ok(Ok(id)) = r {
+            *pending_auction = Some(id);
+        }
+    }
+}
+
+/// Fill the last successfully opened liquidation auction (if any).
+pub fn run_fill_liquidation(
+    fixture: &NekoFixture<'_>,
+    pending_auction: &mut Option<u32>,
+    liquidator: &soroban_sdk::Address,
+) {
+    let Some(id) = *pending_auction else {
+        return;
+    };
+    let r = fixture.pool.try_fill_auction(&id, liquidator);
+    verify_contract_result(&fixture.env, &r);
+    if r.is_ok() {
+        *pending_auction = None;
     }
 }
 

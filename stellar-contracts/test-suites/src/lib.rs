@@ -72,7 +72,7 @@ impl<'a> NekoFixture<'a> {
 
         env.ledger().set(LedgerInfo {
             timestamp: 1_740_000_000,
-            protocol_version: 23,
+            protocol_version: 25,
             sequence_number: 1_000,
             network_id: Default::default(),
             base_reserve: 10,
@@ -226,7 +226,7 @@ impl<'a> NekoFixture<'a> {
             .saturating_add((seconds / 5) as u32);
         self.env.ledger().set(LedgerInfo {
             timestamp: new_ts,
-            protocol_version: 23,
+            protocol_version: 25,
             sequence_number: new_seq,
             network_id: Default::default(),
             base_reserve: 10,
@@ -370,4 +370,47 @@ pub fn create_fixture_with_data<'a>() -> NekoFixture<'a> {
 
     fixture.env.cost_estimate().budget().reset_unlimited();
     fixture
+}
+
+/// Lending fixture with borrowers, then BOND price crashed so positions are **underwater** (HF below 1.0).
+/// Used by `fuzz_liquidation` to exercise `initiate_liquidation` / `fill_auction` paths.
+pub fn create_fixture_for_liquidation_fuzz<'a>() -> NekoFixture<'a> {
+    let fixture = create_fixture_with_data();
+    // SEP-40 requires strictly increasing price timestamps vs last update (same as `jump()`).
+    let ts = fixture.env.ledger().timestamp().saturating_add(1);
+    // Crash BOND to a tiny positive price so collateral value * CF falls below debt (HF below 1.0).
+    fixture.oracle.set_asset_price(
+        &Asset::Other(fixture.sym_bond.clone()),
+        &1i128,
+        &ts,
+    );
+    fixture.env.cost_estimate().budget().reset_unlimited();
+    fixture
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn liquidation_fuzz_fixture_borrowers_are_liquidatable() {
+        let f = create_fixture_for_liquidation_fuzz();
+        let hf_alice = f.pool.calculate_health_factor(&f.alice);
+        let hf_bob = f.pool.calculate_health_factor(&f.bob);
+        assert!(
+            hf_alice < 10_000_000,
+            "alice HF should be < 1.0 (10M), got {hf_alice}"
+        );
+        assert!(
+            hf_bob < 10_000_000,
+            "bob HF should be < 1.0 (10M), got {hf_bob}"
+        );
+    }
+
+    #[test]
+    fn lending_fixture_solvency_after_seed_data() {
+        let f = create_fixture_with_data();
+        f.assert_pool_solvency();
+        f.assert_utilization();
+    }
 }
