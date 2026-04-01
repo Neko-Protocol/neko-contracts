@@ -393,6 +393,11 @@ pub mod rounding {
         Ok(a.fixed_mul_floor(env, &b, &SCALAR_7))
     }
 
+    /// Same as [`mul_scalar_7`] but rounded up — fees charged to users (favors protocol).
+    pub fn mul_scalar_7_ceil(env: &Env, a: i128, b: i128) -> Result<i128, Error> {
+        Ok(a.fixed_mul_ceil(env, &b, &SCALAR_7))
+    }
+
     /// Divide two values with 7 decimal precision
     /// Result = (a * SCALAR_7) / b
     pub fn div_scalar_7(env: &Env, a: i128, b: i128) -> Result<i128, Error> {
@@ -400,6 +405,14 @@ pub mod rounding {
             return Err(Error::ArithmeticError);
         }
         Ok(a.fixed_mul_floor(env, &SCALAR_7, &b))
+    }
+
+    /// ceil((a * b) / divisor); divisor must be positive (e.g. l_factor).
+    pub fn mul_div_ceil(env: &Env, a: i128, b: i128, divisor: i128) -> Result<i128, Error> {
+        if divisor <= 0 {
+            return Err(Error::ArithmeticError);
+        }
+        Ok(a.fixed_mul_ceil(env, &b, &divisor))
     }
 }
 

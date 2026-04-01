@@ -299,12 +299,19 @@ impl Admin {
             return Err(Error::NoTreasuryFeesToCollect);
         }
 
+        let pool_balance = Storage::get_pool_balance(env, asset);
+        if pool_balance < amount {
+            return Err(Error::InsufficientPoolBalance);
+        }
+
         let treasury = Storage::get_treasury(env);
         let token_address =
             Storage::get_token_contract(env, asset).ok_or(Error::TokenContractNotSet)?;
 
         let token_client = TokenClient::new(env, &token_address);
         token_client.transfer(&env.current_contract_address(), &treasury, &amount);
+
+        Storage::set_pool_balance(env, asset, pool_balance - amount);
 
         reserve.treasury_credit = 0;
         Storage::set_reserve_data(env, asset, &reserve);

@@ -156,6 +156,12 @@ impl InterestAuction {
 
         // Transfer interest to bidder
         if interest_to_receive > 0 {
+            let pool_balance = Storage::get_pool_balance(env, asset);
+            if pool_balance < interest_to_receive {
+                return Err(Error::InsufficientPoolBalance);
+            }
+            Storage::set_pool_balance(env, asset, pool_balance - interest_to_receive);
+
             let token_client = TokenClient::new(env, &token_address);
             token_client.transfer(
                 &env.current_contract_address(),

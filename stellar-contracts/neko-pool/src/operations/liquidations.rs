@@ -3,7 +3,8 @@ use soroban_sdk::{Address, Env, Map, Symbol, token::TokenClient};
 use crate::common::error::Error;
 use crate::common::storage::Storage;
 use crate::common::types::{
-    AUCTION_DURATION_BLOCKS, AuctionData, AuctionType, MAX_HEALTH_FACTOR, SCALAR_7, SCALAR_12,
+    self, AUCTION_DURATION_BLOCKS, AuctionData, AuctionType, MAX_HEALTH_FACTOR, SCALAR_7,
+    SCALAR_12,
 };
 use crate::operations::collateral::Collateral;
 use crate::operations::oracles::Oracles;
@@ -44,14 +45,9 @@ impl Liquidations {
             return Err(Error::InsufficientCollateral);
         }
 
-        // Get debt amount (using SCALAR_12 for dToken rate)
         let d_token_rate = Storage::get_d_token_rate(env, debt_asset);
-        let debt_amount = cdp
-            .d_tokens
-            .checked_mul(d_token_rate)
-            .ok_or(Error::ArithmeticError)?
-            .checked_div(SCALAR_12)
-            .ok_or(Error::ArithmeticError)?;
+        let debt_amount =
+            types::rounding::to_underlying_from_d_token(env, cdp.d_tokens, d_token_rate)?;
 
         // Calculate liquidation amounts based on liquidation_percent (7 decimals)
         let liquidation_debt = debt_amount
@@ -214,11 +210,11 @@ impl Liquidations {
         // Calculate liquidation fee (1% of collateral goes to treasury)
         let neko_token_client = TokenClient::new(env, &neko_token);
         let liquidation_fee_rate = Storage::get_liquidation_fee_rate(env) as i128;
-        let liq_fee = collateral_received
-            .checked_mul(liquidation_fee_rate)
-            .ok_or(Error::ArithmeticError)?
-            .checked_div(SCALAR_7)
-            .ok_or(Error::ArithmeticError)?;
+        let liq_fee = types::rounding::mul_scalar_7_ceil(
+            env,
+            collateral_received,
+            liquidation_fee_rate,
+        )?;
         let collateral_for_liquidator = collateral_received
             .checked_sub(liq_fee)
             .ok_or(Error::ArithmeticError)?;
@@ -244,13 +240,9 @@ impl Liquidations {
         // Get debt asset symbol from CDP
         let debt_asset = cdp.debt_asset.clone().ok_or(Error::DebtAssetNotSet)?;
 
-        // Calculate dTokens to burn (using SCALAR_12)
         let d_token_rate = Storage::get_d_token_rate(env, &debt_asset);
-        let d_tokens_to_burn = debt_to_pay
-            .checked_mul(SCALAR_12)
-            .ok_or(Error::ArithmeticError)?
-            .checked_div(d_token_rate)
-            .ok_or(Error::ArithmeticError)?;
+        let d_tokens_to_burn =
+            types::rounding::to_d_token_down(env, debt_to_pay, d_token_rate)?;
 
         cdp.d_tokens -= d_tokens_to_burn;
         if cdp.d_tokens == 0 {
@@ -344,12 +336,11 @@ impl Liquidations {
             // Get collateral factor (7 decimals)
             let collateral_factor = crate::admin::Admin::get_collateral_factor(env, &neko_token);
 
-            // Add to total: CollateralValue × CollateralFactor / SCALAR_7
-            let factored_value = collateral_value
-                .checked_mul(collateral_factor as i128)
-                .ok_or(Error::ArithmeticError)?
-                .checked_div(SCALAR_7)
-                .ok_or(Error::ArithmeticError)?;
+            let factored_value = types::rounding::mul_scalar_7(
+                env,
+                collateral_value,
+                collateral_factor as i128,
+            )?;
 
             total_collateral_value = total_collateral_value
                 .checked_add(factored_value)
@@ -360,12 +351,11 @@ impl Liquidations {
         let total_debt_value = if let Some(debt_asset) = &cdp.debt_asset {
             if cdp.d_tokens > 0 {
                 let d_token_rate = Storage::get_d_token_rate(env, debt_asset);
-                let debt_amount = cdp
-                    .d_tokens
-                    .checked_mul(d_token_rate)
-                    .ok_or(Error::ArithmeticError)?
-                    .checked_div(SCALAR_12)
-                    .ok_or(Error::ArithmeticError)?;
+                let debt_amount = types::rounding::to_underlying_from_d_token(
+                    env,
+                    cdp.d_tokens,
+                    d_token_rate,
+                )?;
 
                 // Route to correct oracle based on debt asset type
                 let (debt_price, debt_price_decimals) =
@@ -400,11 +390,8 @@ impl Liquidations {
         } else {
             SCALAR_7
         };
-        let effective_debt = total_debt_value
-            .checked_mul(SCALAR_7)
-            .ok_or(Error::ArithmeticError)?
-            .checked_div(l_factor)
-            .ok_or(Error::ArithmeticError)?;
+        let effective_debt =
+            types::rounding::mul_div_ceil(env, total_debt_value, SCALAR_7, l_factor)?;
 
         // Health Factor = (CollateralValue × CollateralFactor) / EffectiveDebt
         // With 7 decimals: HF = (total_collateral_value * SCALAR_7) / effective_debt

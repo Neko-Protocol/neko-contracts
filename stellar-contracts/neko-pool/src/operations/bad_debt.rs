@@ -13,7 +13,7 @@ use soroban_sdk::{Address, Env, Symbol};
 
 use crate::common::error::Error;
 use crate::common::storage::Storage;
-use crate::common::types::{AuctionData, AuctionType, SCALAR_12};
+use crate::common::types::{self, AuctionData, AuctionType, SCALAR_12};
 
 /// Bad Debt Auction management
 pub struct BadDebt;
@@ -55,14 +55,12 @@ impl BadDebt {
             return Err(Error::CDPNotInsolvent);
         }
 
-        // Calculate debt amount (using SCALAR_12 for dToken rate)
         let d_token_rate = Storage::get_d_token_rate(env, debt_asset);
-        let debt_amount = cdp
-            .d_tokens
-            .checked_mul(d_token_rate)
-            .ok_or(Error::ArithmeticError)?
-            .checked_div(SCALAR_12)
-            .ok_or(Error::ArithmeticError)?;
+        let debt_amount = types::rounding::to_underlying_from_d_token(
+            env,
+            cdp.d_tokens,
+            d_token_rate,
+        )?;
 
         // Generate auction ID
         let auction_id = Self::generate_auction_id(env);
@@ -153,11 +151,8 @@ impl BadDebt {
         if let Some(asset) = debt_asset {
             // Calculate dTokens to burn
             let d_token_rate = Storage::get_d_token_rate(env, &asset);
-            let d_tokens_to_burn = debt_to_cover
-                .checked_mul(SCALAR_12)
-                .ok_or(Error::ArithmeticError)?
-                .checked_div(d_token_rate)
-                .ok_or(Error::ArithmeticError)?;
+            let d_tokens_to_burn =
+                types::rounding::to_d_token_down(env, debt_to_cover, d_token_rate)?;
 
             // Update CDP
             cdp.d_tokens = cdp.d_tokens.saturating_sub(d_tokens_to_burn);

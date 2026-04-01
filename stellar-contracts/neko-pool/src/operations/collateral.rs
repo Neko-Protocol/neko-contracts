@@ -4,7 +4,7 @@ use crate::admin::Admin;
 use crate::common::error::Error;
 use crate::common::events::Events;
 use crate::common::storage::Storage;
-use crate::common::types::{MIN_HEALTH_FACTOR, SCALAR_12};
+use crate::common::types::{self, MIN_HEALTH_FACTOR};
 use crate::operations::borrowing::Borrowing;
 use crate::operations::oracles::Oracles;
 
@@ -99,12 +99,11 @@ impl Collateral {
             // Get current debt value
             if let Some(debt_asset) = &cdp.debt_asset {
                 let d_token_rate = Storage::get_d_token_rate(env, debt_asset);
-                let debt_amount = cdp
-                    .d_tokens
-                    .checked_mul(d_token_rate)
-                    .ok_or(Error::ArithmeticError)?
-                    .checked_div(SCALAR_12)
-                    .ok_or(Error::ArithmeticError)?;
+                let debt_amount = types::rounding::to_underlying_from_d_token(
+                    env,
+                    cdp.d_tokens,
+                    d_token_rate,
+                )?;
 
                 // Get price of debt asset
                 // Route to correct oracle based on debt asset type

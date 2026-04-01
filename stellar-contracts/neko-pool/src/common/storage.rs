@@ -409,24 +409,12 @@ impl Storage {
         Self::get_reserve_data(env, asset).b_supply
     }
 
-    pub fn set_b_token_supply(env: &Env, asset: &Symbol, supply: i128) {
-        let mut reserve = Self::get_reserve_data(env, asset);
-        reserve.b_supply = supply;
-        Self::set_reserve_data(env, asset, &reserve);
-    }
-
     pub fn get_d_token_rate(env: &Env, asset: &Symbol) -> i128 {
         Self::get_reserve_data(env, asset).d_rate
     }
 
     pub fn get_d_token_supply(env: &Env, asset: &Symbol) -> i128 {
         Self::get_reserve_data(env, asset).d_supply
-    }
-
-    pub fn set_d_token_supply(env: &Env, asset: &Symbol, supply: i128) {
-        let mut reserve = Self::get_reserve_data(env, asset);
-        reserve.d_supply = supply;
-        Self::set_reserve_data(env, asset, &reserve);
     }
 
     // =========================================================================

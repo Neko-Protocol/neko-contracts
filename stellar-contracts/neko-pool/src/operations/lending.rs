@@ -3,8 +3,9 @@ use soroban_sdk::{Address, Env, Symbol, assert_with_error, token::TokenClient};
 use crate::admin::Admin;
 use crate::common::error::Error;
 use crate::common::events::Events;
+use crate::common::reserve_cache::ReserveCache;
 use crate::common::storage::Storage;
-use crate::common::types::{self, PoolState, SCALAR_7, SCALAR_12};
+use crate::common::types::{self, PoolState, SCALAR_7};
 use crate::operations::interest::Interest;
 
 /// Lending functions for bTokens
@@ -41,8 +42,8 @@ impl Lending {
             }
         }
 
-        // Accrue interest before deposit — reuse returned data to avoid a second storage read
-        let reserve = Interest::accrue_interest(env, asset)?;
+        let mut cache = ReserveCache::new(env);
+        let mut reserve = Interest::accrue_interest(env, asset, &mut cache)?;
         let b_token_rate = reserve.b_rate;
 
         // Calculate bTokens with rounding down
@@ -59,9 +60,11 @@ impl Lending {
         let current_balance = Storage::get_pool_balance(env, asset);
         Storage::set_pool_balance(env, asset, current_balance + amount);
 
-        // Update bToken supply
-        let current_supply = Storage::get_b_token_supply(env, asset);
-        Storage::set_b_token_supply(env, asset, current_supply + b_tokens);
+        reserve.b_supply = reserve
+            .b_supply
+            .checked_add(b_tokens)
+            .ok_or(Error::ArithmeticError)?;
+        cache.set_reserve(env, asset, &reserve);
 
         // Update lender's bToken balance
         let current_balance = Storage::get_b_token_balance(env, lender, asset);
@@ -70,6 +73,7 @@ impl Lending {
         // Emit event
         Events::deposit(env, lender, asset, amount, b_tokens);
 
+        cache.flush(env);
         Ok(b_tokens)
     }
 
@@ -90,8 +94,8 @@ impl Lending {
             return Err(Error::PoolFrozen);
         }
 
-        // Accrue interest before withdrawal — reuse returned data to avoid a second storage read
-        let reserve = Interest::accrue_interest(env, asset)?;
+        let mut cache = ReserveCache::new(env);
+        let mut reserve = Interest::accrue_interest(env, asset, &mut cache)?;
 
         // Get current lender balance and adjust if user tries to withdraw more than they have
         let lender_balance = Storage::get_b_token_balance(env, lender, asset);
@@ -107,12 +111,8 @@ impl Lending {
 
         let b_token_rate = reserve.b_rate;
 
-        // Calculate amount to withdraw: bTokens × bTokenRate / SCALAR_12
-        let amount = b_tokens_to_burn
-            .checked_mul(b_token_rate)
-            .ok_or(Error::ArithmeticError)?
-            .checked_div(SCALAR_12)
-            .ok_or(Error::ArithmeticError)?;
+        // Underlying out: floor favors protocol (user receives slightly less for burning bTokens)
+        let amount = types::rounding::to_underlying_from_b_token(env, b_tokens_to_burn, b_token_rate)?;
 
         // Check pool has enough balance
         let pool_balance = Storage::get_pool_balance(env, asset);
@@ -120,9 +120,11 @@ impl Lending {
             return Err(Error::InsufficientPoolBalance);
         }
 
-        // Update bToken supply FIRST
-        let current_supply = Storage::get_b_token_supply(env, asset);
-        Storage::set_b_token_supply(env, asset, current_supply - b_tokens_to_burn);
+        reserve.b_supply = reserve
+            .b_supply
+            .checked_sub(b_tokens_to_burn)
+            .ok_or(Error::ArithmeticError)?;
+        cache.set_reserve(env, asset, &reserve);
 
         // Update lender's bToken balance
         Storage::set_b_token_balance(env, lender, asset, lender_balance - b_tokens_to_burn);
@@ -131,7 +133,7 @@ impl Lending {
         Storage::set_pool_balance(env, asset, pool_balance - amount);
 
         // Verify utilization is below 100% AFTER updating supply (7 decimals)
-        let utilization = Interest::calculate_utilization(env, asset)?;
+        let utilization = Interest::calculate_utilization(env, asset, &mut cache)?;
         if utilization >= SCALAR_7 {
             return Err(Error::InvalidUtilRate);
         }
@@ -145,6 +147,7 @@ impl Lending {
         // Emit event (use b_tokens_to_burn, not the original b_tokens)
         Events::withdraw(env, lender, asset, amount, b_tokens_to_burn);
 
+        cache.flush(env);
         Ok(amount)
     }
 

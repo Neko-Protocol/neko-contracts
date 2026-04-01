@@ -3,8 +3,9 @@ use soroban_sdk::{Address, Env, Symbol, assert_with_error, token::TokenClient};
 use crate::admin::Admin;
 use crate::common::error::Error;
 use crate::common::events::Events;
+use crate::common::reserve_cache::ReserveCache;
 use crate::common::storage::Storage;
-use crate::common::types::{self, PoolState, SCALAR_7, SCALAR_12};
+use crate::common::types::{self, PoolState, SCALAR_7};
 use crate::operations::collateral::Collateral;
 use crate::operations::interest::Interest;
 use crate::operations::oracles::Oracles;
@@ -41,8 +42,8 @@ impl Borrowing {
             SCALAR_7
         };
 
-        // Accrue interest before borrow — reuse returned data to avoid repeated storage reads
-        let mut reserve = Interest::accrue_interest(env, asset)?;
+        let mut cache = ReserveCache::new(env);
+        let mut reserve = Interest::accrue_interest(env, asset, &mut cache)?;
 
         // Get or create CDP
         let mut cdp =
@@ -70,11 +71,12 @@ impl Borrowing {
         // Calculate new debt value in effective terms (applying l_factor)
         let new_debt_value =
             Oracles::calculate_usd_value(env, amount, asset_price, 0, price_decimals)?;
-        let effective_new_debt = new_debt_value
-            .checked_mul(SCALAR_7)
-            .ok_or(Error::ArithmeticError)?
-            .checked_div(l_factor)
-            .ok_or(Error::ArithmeticError)?;
+        let effective_new_debt = types::rounding::mul_div_ceil(
+            env,
+            new_debt_value,
+            SCALAR_7,
+            l_factor,
+        )?;
 
         if effective_new_debt > borrow_limit {
             return Err(Error::InsufficientBorrowLimit);
@@ -91,11 +93,8 @@ impl Borrowing {
 
         // Calculate origination fee
         let origination_fee_rate = Storage::get_origination_fee_rate(env) as i128;
-        let origination_fee = amount
-            .checked_mul(origination_fee_rate)
-            .ok_or(Error::ArithmeticError)?
-            .checked_div(SCALAR_7)
-            .ok_or(Error::ArithmeticError)?;
+        let origination_fee =
+            types::rounding::mul_scalar_7_ceil(env, amount, origination_fee_rate)?;
 
         // D-tokens are minted for amount + fee: borrower owes more than they receive
         let borrow_plus_fee = amount
@@ -103,14 +102,17 @@ impl Borrowing {
             .ok_or(Error::ArithmeticError)?;
         let d_tokens = types::rounding::to_d_token_up(env, borrow_plus_fee, d_token_rate)?;
 
-        // Track origination fee as treasury credit — update cached reserve and write once
         if origination_fee > 0 {
             reserve.treasury_credit = reserve
                 .treasury_credit
                 .checked_add(origination_fee)
                 .ok_or(Error::ArithmeticError)?;
-            Storage::set_reserve_data(env, asset, &reserve);
         }
+        reserve.d_supply = reserve
+            .d_supply
+            .checked_add(d_tokens)
+            .ok_or(Error::ArithmeticError)?;
+        cache.set_reserve(env, asset, &reserve);
 
         // Update CDP
         cdp.debt_asset = Some(asset.clone());
@@ -122,16 +124,12 @@ impl Borrowing {
         let current_balance = Storage::get_d_token_balance(env, borrower, asset);
         Storage::set_d_token_balance(env, borrower, asset, current_balance + d_tokens);
 
-        // Update dToken supply
-        let current_supply = Storage::get_d_token_supply(env, asset);
-        Storage::set_d_token_supply(env, asset, current_supply + d_tokens);
-
         // Pool balance decreases only by `amount` (fee remains in pool as treasury credit)
         Storage::set_pool_balance(env, asset, pool_balance - amount);
 
         // Verify utilization is below 100% after borrow
         // This ensures the pool maintains enough liquidity
-        let utilization = Interest::calculate_utilization(env, asset)?;
+        let utilization = Interest::calculate_utilization(env, asset, &mut cache)?;
         if utilization >= SCALAR_7 {
             return Err(Error::InvalidUtilRate);
         }
@@ -145,6 +143,7 @@ impl Borrowing {
         // Emit event
         Events::borrow(env, borrower, asset, amount, d_tokens);
 
+        cache.flush(env);
         Ok(d_tokens)
     }
 
@@ -159,8 +158,8 @@ impl Borrowing {
 
         assert_with_error!(env, d_tokens > 0, Error::NotPositive);
 
-        // Accrue interest before repay — reuse returned data to avoid a second storage read
-        let reserve = Interest::accrue_interest(env, asset)?;
+        let mut cache = ReserveCache::new(env);
+        let mut reserve = Interest::accrue_interest(env, asset, &mut cache)?;
 
         // Get CDP
         let mut cdp = Storage::get_cdp(env, borrower).ok_or(Error::DebtAssetNotSet)?;
@@ -188,12 +187,8 @@ impl Borrowing {
         // Get dTokenRate from cached reserve data (no extra storage read)
         let d_token_rate = reserve.d_rate;
 
-        // Calculate amount to repay: dTokens × dTokenRate / SCALAR_12
-        let amount = d_tokens_to_burn
-            .checked_mul(d_token_rate)
-            .ok_or(Error::ArithmeticError)?
-            .checked_div(SCALAR_12)
-            .ok_or(Error::ArithmeticError)?;
+        // Underlying repaid: ceil favors protocol (borrower returns slightly more underlying per dToken burned)
+        let amount = types::rounding::to_underlying_from_d_token(env, d_tokens_to_burn, d_token_rate)?;
 
         // Update CDP
         cdp.d_tokens -= d_tokens_to_burn;
@@ -206,9 +201,11 @@ impl Borrowing {
         // Update dToken balance
         Storage::set_d_token_balance(env, borrower, asset, borrower_balance - d_tokens_to_burn);
 
-        // Update dToken supply
-        let current_supply = Storage::get_d_token_supply(env, asset);
-        Storage::set_d_token_supply(env, asset, current_supply - d_tokens_to_burn);
+        reserve.d_supply = reserve
+            .d_supply
+            .checked_sub(d_tokens_to_burn)
+            .ok_or(Error::ArithmeticError)?;
+        cache.set_reserve(env, asset, &reserve);
 
         // Update pool balance
         let pool_balance = Storage::get_pool_balance(env, asset);
@@ -223,6 +220,7 @@ impl Borrowing {
         // Emit event
         Events::repay(env, borrower, asset, amount, d_tokens_to_burn);
 
+        cache.flush(env);
         Ok(amount)
     }
 
@@ -265,12 +263,11 @@ impl Borrowing {
             // Get collateral factor (7 decimals)
             let collateral_factor = Admin::get_collateral_factor(env, &neko_token);
 
-            // Add to total: CollateralValue × CollateralFactor / SCALAR_7
-            let factored_value = collateral_value
-                .checked_mul(collateral_factor as i128)
-                .ok_or(Error::ArithmeticError)?
-                .checked_div(SCALAR_7)
-                .ok_or(Error::ArithmeticError)?;
+            let factored_value = types::rounding::mul_scalar_7(
+                env,
+                collateral_value,
+                collateral_factor as i128,
+            )?;
 
             total_collateral_value = total_collateral_value
                 .checked_add(factored_value)
@@ -283,12 +280,11 @@ impl Borrowing {
             if let Some(debt_asset) = &cdp.debt_asset {
                 if cdp.d_tokens > 0 {
                     let d_token_rate = Storage::get_d_token_rate(env, debt_asset);
-                    let debt_amount = cdp
-                        .d_tokens
-                        .checked_mul(d_token_rate)
-                        .ok_or(Error::ArithmeticError)?
-                        .checked_div(SCALAR_12)
-                        .ok_or(Error::ArithmeticError)?;
+                    let debt_amount = types::rounding::to_underlying_from_d_token(
+                        env,
+                        cdp.d_tokens,
+                        d_token_rate,
+                    )?;
 
                     // Route to correct oracle based on debt asset type
                     let (debt_price, price_decimals) =
@@ -318,13 +314,12 @@ impl Borrowing {
             (0, SCALAR_7)
         };
 
-        // Apply l_factor: effective_debt = debt_usd * SCALAR_7 / l_factor
-        // Lower l_factor → larger effective_debt → stricter borrow limit
-        let effective_debt = current_debt_value
-            .checked_mul(SCALAR_7)
-            .ok_or(Error::ArithmeticError)?
-            .checked_div(l_factor)
-            .ok_or(Error::ArithmeticError)?;
+        let effective_debt = types::rounding::mul_div_ceil(
+            env,
+            current_debt_value,
+            SCALAR_7,
+            l_factor,
+        )?;
 
         // Borrow Limit = TotalCollateralValue - EffectiveDebt
         let borrow_limit = total_collateral_value
