@@ -50,11 +50,11 @@ impl Liquidations {
             types::rounding::to_underlying_from_d_token(env, cdp.d_tokens, d_token_rate)?;
 
         // Calculate liquidation amounts based on liquidation_percent (7 decimals)
-        let liquidation_debt = debt_amount
-            .checked_mul(liquidation_percent as i128)
-            .ok_or(Error::ArithmeticError)?
-            .checked_div(SCALAR_7)
-            .ok_or(Error::ArithmeticError)?;
+        let liquidation_debt = types::rounding::mul_scalar_7(
+            env,
+            debt_amount,
+            liquidation_percent as i128,
+        )?;
 
         // Calculate collateral to liquidate using premium formula
         // Premium p = (1 - avg_cf * avg_lf) / 2 + 1
@@ -63,11 +63,7 @@ impl Liquidations {
         let avg_lf = SCALAR_7; // 1.0 (100%)
 
         // Calculate premium: p = (1 - avg_cf * avg_lf) / 2 + 1
-        let cf_lf_product = avg_cf
-            .checked_mul(avg_lf)
-            .ok_or(Error::ArithmeticError)?
-            .checked_div(SCALAR_7)
-            .ok_or(Error::ArithmeticError)?;
+        let cf_lf_product = types::rounding::mul_scalar_7(env, avg_cf, avg_lf)?;
 
         let premium = (SCALAR_7
             .checked_sub(cf_lf_product)
@@ -97,26 +93,30 @@ impl Liquidations {
             debt_decimals,
         )?;
 
-        // Calculate collateral percentage: C_p = (p * L_p * L_o) / C_o
-        let collateral_percent = premium
+        // Calculate collateral percentage: (premium * liq_pct * total_debt_value) / (total_collateral_value * SCALAR_7)
+        let collateral_percent_numer = premium
             .checked_mul(liquidation_percent as i128)
-            .ok_or(Error::ArithmeticError)?
-            .checked_mul(total_debt_value)
-            .ok_or(Error::ArithmeticError)?
-            .checked_div(total_collateral_value)
-            .ok_or(Error::ArithmeticError)?
-            .checked_div(SCALAR_7)
+            .and_then(|x| x.checked_mul(total_debt_value))
             .ok_or(Error::ArithmeticError)?;
+        let collateral_percent_denom = total_collateral_value
+            .checked_mul(SCALAR_7)
+            .ok_or(Error::ArithmeticError)?;
+        let collateral_percent = types::rounding::mul_div_floor(
+            env,
+            collateral_percent_numer,
+            1,
+            collateral_percent_denom,
+        )?;
 
         // Cap at 100% (SCALAR_7)
         let collateral_percent_capped = collateral_percent.min(SCALAR_7);
 
         // Calculate collateral amount to liquidate
-        let liquidation_collateral = collateral_amount
-            .checked_mul(collateral_percent_capped)
-            .ok_or(Error::ArithmeticError)?
-            .checked_div(SCALAR_7)
-            .ok_or(Error::ArithmeticError)?;
+        let liquidation_collateral = types::rounding::mul_scalar_7(
+            env,
+            collateral_amount,
+            collateral_percent_capped,
+        )?;
 
         // Generate auction ID
         let auction_id = Self::generate_auction_id(env);
@@ -191,17 +191,11 @@ impl Liquidations {
         let debt_amount = auction.bid.get(debt_token_address.clone()).unwrap_or(0);
 
         // Calculate collateral to receive and debt to pay (modifiers use SCALAR_12)
-        let collateral_received = collateral_amount
-            .checked_mul(lot_modifier)
-            .ok_or(Error::ArithmeticError)?
-            .checked_div(SCALAR_12)
-            .ok_or(Error::ArithmeticError)?;
+        let collateral_received =
+            types::rounding::mul_div_floor(env, collateral_amount, lot_modifier, SCALAR_12)?;
 
-        let debt_to_pay = debt_amount
-            .checked_mul(bid_modifier)
-            .ok_or(Error::ArithmeticError)?
-            .checked_div(SCALAR_12)
-            .ok_or(Error::ArithmeticError)?;
+        let debt_to_pay =
+            types::rounding::mul_div_floor(env, debt_amount, bid_modifier, SCALAR_12)?;
 
         // Transfer debt asset from liquidator to pool
         let token_client = TokenClient::new(env, &debt_token_address);
@@ -394,12 +388,13 @@ impl Liquidations {
             types::rounding::mul_div_ceil(env, total_debt_value, SCALAR_7, l_factor)?;
 
         // Health Factor = (CollateralValue × CollateralFactor) / EffectiveDebt
-        // With 7 decimals: HF = (total_collateral_value * SCALAR_7) / effective_debt
-        let health_factor = total_collateral_value
-            .checked_mul(SCALAR_7)
-            .ok_or(Error::ArithmeticError)?
-            .checked_div(effective_debt)
-            .ok_or(Error::ArithmeticError)?;
+        // With 7 decimals: HF = floor((total_collateral_value * SCALAR_7) / effective_debt)
+        let health_factor = types::rounding::mul_div_floor(
+            env,
+            total_collateral_value,
+            SCALAR_7,
+            effective_debt,
+        )?;
 
         // Cap at u32::MAX
         Ok(health_factor.min(u32::MAX as i128) as u32)

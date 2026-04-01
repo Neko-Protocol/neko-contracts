@@ -71,6 +71,8 @@ fuzz_target!(|input: Input| {
 
     let mut prev_d_rate_usdc = fixture.pool.get_d_token_rate(&fixture.sym_usdc);
     let mut prev_d_rate_xlm = fixture.pool.get_d_token_rate(&fixture.sym_xlm);
+    let mut prev_b_rate_usdc = fixture.pool.get_b_token_rate(&fixture.sym_usdc);
+    let mut prev_b_rate_xlm = fixture.pool.get_b_token_rate(&fixture.sym_xlm);
     let mut pending_auction: Option<u32> = None;
 
     for cmd in &input.commands {
@@ -91,6 +93,10 @@ fuzz_target!(|input: Input| {
         );
         prev_d_rate_usdc = d_rate_usdc;
         prev_d_rate_xlm = d_rate_xlm;
+
+        fixture.assert_b_rates_non_decreasing(prev_b_rate_usdc, prev_b_rate_xlm);
+        prev_b_rate_usdc = fixture.pool.get_b_token_rate(&fixture.sym_usdc);
+        prev_b_rate_xlm = fixture.pool.get_b_token_rate(&fixture.sym_xlm);
 
         assert!(fixture.pool.get_pool_balance(&fixture.sym_usdc) >= 0);
         assert!(fixture.pool.get_pool_balance(&fixture.sym_xlm) >= 0);

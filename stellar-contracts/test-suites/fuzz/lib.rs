@@ -12,8 +12,8 @@ use test_suites::NekoFixture;
 pub type TryInvokeResult<T, E> = Result<T, Result<E, soroban_sdk::InvokeError>>;
 
 /// Panic only when the contract surfaced `WasmVm` + `InvalidAction` (plain `panic!` in WASM).
-/// Same criterion as Blend v2 `test-suites/fuzz/lib.rs`. Protocol errors (`InsufficientBalance`, etc.)
-/// are normal; `E` must convert to `soroban_sdk::Error` for the check (Soroban `#[contracterror]`).
+/// Protocol errors (`InsufficientBalance`, etc.) are normal and do not trigger a panic.
+/// `E` must convert to `soroban_sdk::Error` (Soroban `#[contracterror]`).
 #[track_caller]
 pub fn verify_contract_result<T, E>(env: &soroban_sdk::Env, r: &TryInvokeResult<T, E>)
 where

@@ -123,24 +123,18 @@ impl BadDebt {
         // Calculate how many blocks have passed
         let blocks_elapsed = env.ledger().sequence() - auction.block;
 
-        // Calculate lot and bid modifiers (following Blend pattern)
+        // Calculate lot and bid modifiers for the Dutch auction
         let (lot_modifier, bid_modifier) = Self::calculate_modifiers(blocks_elapsed);
 
         // Calculate backstop tokens to give (lot)
         // Starts at 0% and increases to 100% over auction duration
-        let backstop_tokens = amount
-            .checked_mul(lot_modifier)
-            .ok_or(Error::ArithmeticError)?
-            .checked_div(SCALAR_12)
-            .ok_or(Error::ArithmeticError)?;
+        let backstop_tokens =
+            types::rounding::mul_div_floor(env, amount, lot_modifier, SCALAR_12)?;
 
         // Calculate debt to actually cover (bid)
         // Starts at 100% and decreases over auction duration
-        let debt_to_cover = amount
-            .checked_mul(bid_modifier)
-            .ok_or(Error::ArithmeticError)?
-            .checked_div(SCALAR_12)
-            .ok_or(Error::ArithmeticError)?;
+        let debt_to_cover =
+            types::rounding::mul_div_floor(env, amount, bid_modifier, SCALAR_12)?;
 
         // Get CDP and update debt
         let mut cdp = Storage::get_cdp(env, &auction.user).ok_or(Error::CDPNotInsolvent)?;
@@ -201,8 +195,8 @@ impl BadDebt {
         Ok(backstop_tokens)
     }
 
-    /// Calculate auction modifiers based on blocks elapsed
-    /// Following the Blend Dutch auction pattern:
+    /// Calculate auction modifiers based on blocks elapsed.
+    /// Dutch auction mechanics:
     /// - Lot modifier: 0 → SCALAR_12 (0% to 100%)
     /// - Bid modifier: SCALAR_12 → 0 (100% to 0%)
     fn calculate_modifiers(blocks_elapsed: u32) -> (i128, i128) {

@@ -13,6 +13,10 @@ use crate::common::types::{InterestRateParams, ReserveData, SCALAR_7, SCALAR_12,
 /// - Dynamic rate modifier (ir_mod) adjusts based on deviation from target
 /// - All rate parameters use 7 decimals (SCALAR_7)
 /// - Token rates (b_rate, d_rate) use 12 decimals (SCALAR_12)
+///
+/// **Rounding:** intermediates are non-negative; `checked_div` truncates toward zero, which equals
+/// floor for nonnegative values. Not migrated to `soroban-fixed-point-math` wholesale — fuzz +
+/// solvency invariants are the guardrails; change divisions here only with explicit policy.
 pub struct Interest;
 
 impl Interest {
@@ -106,12 +110,13 @@ impl Interest {
         let r_three = params.r_three as i128;
         let reactivity = params.reactivity as i128;
 
-        // Calculate interest rate based on utilization segment
+        // Calculate interest rate based on utilization segment (piecewise linear; divisions truncate).
         let interest_rate = if cur_util <= target_util {
             // Segment 1: 0 <= util <= target
             // rate = (util / target) * R1 + R0
             // rate = rate * ir_mod / SCALAR_7
             let rate = if target_util > 0 {
+                // util/target: floor for nonnegative util ≤ target
                 cur_util
                     .checked_mul(r_one)
                     .ok_or(Error::ArithmeticError)?
@@ -122,6 +127,7 @@ impl Interest {
             } else {
                 r_base
             };
+            // ir_mod scales the 7-dec rate
             rate.checked_mul(ir_mod)
                 .ok_or(Error::ArithmeticError)?
                 .checked_div(SCALAR_7)
@@ -156,7 +162,7 @@ impl Interest {
         } else {
             // Segment 3: util > max (95%)
             // rate = ((util - max) / (1 - max)) * R3 + R2 + R1 + R0
-            // Note: No ir_mod multiplication in segment 3 (like Blend)
+            // Note: No ir_mod multiplication in segment 3 (reactivity only applies to segments 1–2)
             let util_diff = cur_util
                 .checked_sub(max_util)
                 .ok_or(Error::ArithmeticError)?;
@@ -198,6 +204,7 @@ impl Interest {
             .checked_mul(SCALAR_7)
             .ok_or(Error::ArithmeticError)?;
 
+        // Per-second accrual bump (12-dec); denominator is SECONDS_PER_YEAR * SCALAR_7
         let accrual_increase = time_weight_numerator
             .checked_div(time_weight_denominator)
             .ok_or(Error::ArithmeticError)?;
@@ -213,6 +220,7 @@ impl Interest {
             .checked_sub(target_util)
             .ok_or(Error::ArithmeticError)?;
 
+        // Reactivity update (7-dec); util_dif can be negative → truncating div follows Rust / semantics
         let ir_mod_change = (delta_time as i128)
             .checked_mul(util_dif)
             .ok_or(Error::ArithmeticError)?
@@ -246,17 +254,18 @@ impl Interest {
         let backstop_take_rate = backstop_take_rate as i128;
         let reserve_factor = reserve_factor as i128;
 
-        // Underlying value of all b_tokens before this accrual (Blend: total_supply pre-update)
+        // Underlying value of all b_tokens before this accrual (pre-update total supply)
         let pre_update_supply = reserve
             .b_supply
             .checked_mul(reserve.b_rate)
             .ok_or(Error::ArithmeticError)?
+            // b_supply × b_rate / SCALAR_12: floor for nonnegative
             .checked_div(SCALAR_12)
             .ok_or(Error::ArithmeticError)?;
 
         let old_d_rate = reserve.d_rate;
 
-        // Borrowers accrue at the loan rate: new_d_rate = old_d_rate * accrual / SCALAR_12
+        // Borrowers accrue at the loan rate: new_d_rate = old_d_rate * accrual / SCALAR_12 (floor)
         reserve.d_rate = old_d_rate
             .checked_mul(accrual)
             .ok_or(Error::ArithmeticError)?
@@ -268,7 +277,7 @@ impl Interest {
             .checked_sub(old_d_rate)
             .ok_or(Error::ArithmeticError)?;
 
-        // Interest actually charged on debt this period (underlying units)
+        // Interest actually charged on debt this period (underlying; floor)
         let interest_earned = if reserve.d_supply > 0 {
             reserve
                 .d_supply
@@ -310,8 +319,8 @@ impl Interest {
 
         // Lenders: only the interest actually paid (minus protocol) increases b_token value.
         // Multiplying b_rate by a scaled accrual factor was wrong at util < 100% — it credited
-        // lenders at the full borrow rate on total supply instead of on debt (Blend v2 sets
-        // b_rate = (pre_supply + accrued_to_lenders) / b_supply).
+        // lenders at the full borrow rate on total supply instead of on debt; correct formula:
+        // b_rate = (pre_supply + accrued_to_lenders) / b_supply.
         if reserve.b_supply > 0 {
             let lender_accrued = interest_earned
                 .checked_sub(backstop_credit)
@@ -323,6 +332,7 @@ impl Interest {
                 .checked_add(lender_accrued)
                 .ok_or(Error::ArithmeticError)?;
 
+            // New b_rate = lender_accrued spread over b_supply (floor)
             reserve.b_rate = new_supply
                 .checked_mul(SCALAR_12)
                 .ok_or(Error::ArithmeticError)?
@@ -353,7 +363,7 @@ impl Interest {
             return Ok(0);
         }
 
-        // Total supply = b_supply * b_rate / SCALAR_12
+        // Total supply = b_supply * b_rate / SCALAR_12 (floor)
         let total_supply = reserve
             .b_supply
             .checked_mul(reserve.b_rate)
@@ -365,7 +375,7 @@ impl Interest {
             return Ok(0);
         }
 
-        // Total liabilities = d_supply * d_rate / SCALAR_12
+        // Total liabilities = d_supply * d_rate / SCALAR_12 (floor)
         let total_liabilities = reserve
             .d_supply
             .checked_mul(reserve.d_rate)
@@ -373,8 +383,7 @@ impl Interest {
             .checked_div(SCALAR_12)
             .ok_or(Error::ArithmeticError)?;
 
-        // Utilization = (liabilities * SCALAR_7) / supply
-        // Cap at SCALAR_7 (100%)
+        // Utilization = (liabilities * SCALAR_7) / supply (floor); cap at 100%
         if total_liabilities >= total_supply {
             return Ok(SCALAR_7);
         }
@@ -422,7 +431,7 @@ impl Interest {
         Ok(annual_rate)
     }
 
-    /// Default interest rate parameters (Blend-style)
+    /// Default interest rate parameters
     pub fn default_params() -> InterestRateParams {
         InterestRateParams {
             target_util: 7_500_000, // 75%

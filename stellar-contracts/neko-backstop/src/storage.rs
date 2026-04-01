@@ -1,7 +1,13 @@
 use soroban_sdk::{Address, Env, Vec, panic_with_error};
 
 use crate::error::Error;
-use crate::types::{DataKey, INSTANCE_BUMP, INSTANCE_TTL, USER_BUMP, USER_TTL, UserBalance};
+use crate::types::{
+    DataKey, INSTANCE_BUMP, INSTANCE_TTL, ONE_DAY_LEDGERS, USER_BUMP, USER_TTL, UserBalance,
+};
+
+/// Pending admin proposal TTL (matches neko-pool).
+const PROPOSAL_TTL: u32 = ONE_DAY_LEDGERS * 7;
+const PROPOSAL_BUMP: u32 = PROPOSAL_TTL + ONE_DAY_LEDGERS;
 
 pub struct Storage;
 
@@ -41,6 +47,29 @@ impl Storage {
     pub fn set_admin(env: &Env, admin: &Address) {
         env.storage().instance().set(&DataKey::Admin, admin);
         Self::extend_instance_ttl(env);
+    }
+
+    /// Replace admin after two-step accept (same key as initial set).
+    pub fn replace_admin(env: &Env, admin: &Address) {
+        env.storage().instance().set(&DataKey::Admin, admin);
+        Self::extend_instance_ttl(env);
+    }
+
+    pub fn get_proposed_admin(env: &Env) -> Option<Address> {
+        env.storage().temporary().get(&DataKey::ProposedAdmin)
+    }
+
+    pub fn set_proposed_admin(env: &Env, proposed: &Address) {
+        env.storage()
+            .temporary()
+            .set(&DataKey::ProposedAdmin, proposed);
+        env.storage()
+            .temporary()
+            .extend_ttl(&DataKey::ProposedAdmin, PROPOSAL_TTL, PROPOSAL_BUMP);
+    }
+
+    pub fn del_proposed_admin(env: &Env) {
+        env.storage().temporary().remove(&DataKey::ProposedAdmin);
     }
 
     // =========================================================================

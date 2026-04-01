@@ -7,7 +7,7 @@ mod operations;
 mod test;
 
 pub use common::error::Error;
-pub use common::types::{AssetType, InterestRateParams, PoolState};
+pub use common::types::{AssetType, InterestRateParams, PoolInitConfig, PoolState};
 pub use contract::{LendingContract, LendingContractClient};
 
 // Import RWA Oracle WASM for reading RWA asset prices

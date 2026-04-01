@@ -11,7 +11,7 @@ use soroban_sdk::{
 use neko_backstop::{NekoBackstop, NekoBackstopClient};
 use neko_pool::{
     neko_oracle::{self, Asset},
-    AssetType, InterestRateParams, LendingContract, LendingContractClient,
+    AssetType, InterestRateParams, LendingContract, LendingContractClient, PoolInitConfig,
 };
 
 pub const SCALAR_7: i128 = 10_000_000;
@@ -136,20 +136,21 @@ impl<'a> NekoFixture<'a> {
         oracle.set_asset_price(&Asset::Other(sym_xlm.clone()), &PRICE_XLM, &now);
         oracle.set_asset_price(&Asset::Other(sym_bond.clone()), &PRICE_BOND, &now);
 
-        // ── Pool ─────────────────────────────────────────────────────────────
-        let pool_addr = env.register(LendingContract, ());
-        let pool = LendingContractClient::new(&env, &pool_addr);
-
-        pool.initialize(
-            &admin,
-            &treasury,
-            &oracle_addr, // neko_oracle (RWA)
-            &oracle_addr, // reflector_oracle (Crypto) – same instance for tests
-            &500_000u32,  // backstop_take_rate: 5%
-            &1_000_000u32, // reserve_factor: 10%
-            &40_000u32,   // origination_fee_rate: 0.4%
-            &100_000u32,  // liquidation_fee_rate: 1%
+        // ── Pool (`__constructor` with `PoolInitConfig`) ─────────────────────
+        let pool_addr = env.register(
+            LendingContract,
+            (PoolInitConfig {
+                admin: admin.clone(),
+                treasury: treasury.clone(),
+                neko_oracle: oracle_addr.clone(),
+                reflector_oracle: oracle_addr.clone(),
+                backstop_take_rate: 500_000u32,
+                reserve_factor: 1_000_000u32,
+                origination_fee_rate: 40_000u32,
+                liquidation_fee_rate: 100_000u32,
+            },),
         );
+        let pool = LendingContractClient::new(&env, &pool_addr);
 
         // Pool starts OnIce → reserve params are applied immediately (no timelock)
         let default_params = default_interest_params();
@@ -274,6 +275,20 @@ impl<'a> NekoFixture<'a> {
                 b_rate,
             );
         }
+    }
+
+    /// bToken exchange rate must not decrease (interest accrues to lenders).
+    pub fn assert_b_rates_non_decreasing(&self, prev_usdc: i128, prev_xlm: i128) {
+        let b_usdc = self.pool.get_b_token_rate(&self.sym_usdc);
+        let b_xlm = self.pool.get_b_token_rate(&self.sym_xlm);
+        assert!(
+            b_usdc >= prev_usdc,
+            "b_rate_usdc decreased: {prev_usdc} → {b_usdc}"
+        );
+        assert!(
+            b_xlm >= prev_xlm,
+            "b_rate_xlm decreased: {prev_xlm} → {b_xlm}"
+        );
     }
 
     /// Utilization must never exceed 100%: liabilities (debt) <= deposit claims in underlying.

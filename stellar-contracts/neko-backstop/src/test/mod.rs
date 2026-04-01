@@ -50,6 +50,36 @@ fn create_backstop<'a>(
 // ---------------------------------------------------------------------------
 
 #[test]
+fn test_propose_and_accept_admin() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let admin = Address::generate(&env);
+    let pool = env.register(mock_pool::MockPool, ());
+    let (_, token) = create_token(&env, &admin);
+    let client = create_backstop(&env, &admin, &pool, &token, 0);
+
+    let new_admin = Address::generate(&env);
+    client.propose_admin(&new_admin);
+    client.accept_admin();
+
+    assert_eq!(client.get_admin(), new_admin);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #1)")]
+fn test_accept_admin_without_proposal_panics() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let admin = Address::generate(&env);
+    let pool = env.register(mock_pool::MockPool, ());
+    let (_, token) = create_token(&env, &admin);
+    let client = create_backstop(&env, &admin, &pool, &token, 0);
+
+    // No `propose_admin` — pending admin missing
+    client.accept_admin();
+}
+
+#[test]
 fn test_initialization() {
     let env = Env::default();
     env.mock_all_auths();

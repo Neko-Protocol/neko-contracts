@@ -35,6 +35,16 @@ pub struct BadDebtCoveredEvent {
     pub new_total: i128,
 }
 
+#[contractevent]
+pub struct BackstopAdminProposedEvent {
+    pub proposed: Address,
+}
+
+#[contractevent]
+pub struct BackstopAdminChangedEvent {
+    pub new_admin: Address,
+}
+
 pub struct Events;
 
 impl Events {
@@ -80,5 +90,19 @@ impl Events {
 
     pub fn bad_debt_covered(env: &Env, amount: i128, new_total: i128) {
         BadDebtCoveredEvent { amount, new_total }.publish(env);
+    }
+
+    pub fn admin_proposed(env: &Env, proposed: &Address) {
+        BackstopAdminProposedEvent {
+            proposed: proposed.clone(),
+        }
+        .publish(env);
+    }
+
+    pub fn admin_changed(env: &Env, new_admin: &Address) {
+        BackstopAdminChangedEvent {
+            new_admin: new_admin.clone(),
+        }
+        .publish(env);
     }
 }

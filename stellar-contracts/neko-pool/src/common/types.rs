@@ -70,7 +70,7 @@ pub const PROPOSAL_TTL: u32 = ONE_DAY_LEDGERS * 7;
 pub const PROPOSAL_BUMP: u32 = PROPOSAL_TTL + ONE_DAY_LEDGERS;
 
 /// Auction temporary storage TTL — 7 days in ledgers.
-/// Auctions that are never filled auto-expire after this window (Blend v2 pattern).
+/// Auctions that are never filled auto-expire after this window.
 pub const AUCTION_TTL: u32 = ONE_DAY_LEDGERS * 7;
 pub const AUCTION_BUMP: u32 = AUCTION_TTL + ONE_DAY_LEDGERS;
 
@@ -119,6 +119,20 @@ pub enum PoolState {
     Active, // All operations enabled
     OnIce,  // Only borrowing disabled
     Frozen, // Both borrowing and depositing disabled
+}
+
+/// Arguments for [`crate::contract::LendingContract::__constructor`] (factory `deploy_v2` + tests).
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PoolInitConfig {
+    pub admin: Address,
+    pub treasury: Address,
+    pub neko_oracle: Address,
+    pub reflector_oracle: Address,
+    pub backstop_take_rate: u32,
+    pub reserve_factor: u32,
+    pub origination_fee_rate: u32,
+    pub liquidation_fee_rate: u32,
 }
 
 // ============================================================================
@@ -413,6 +427,14 @@ pub mod rounding {
             return Err(Error::ArithmeticError);
         }
         Ok(a.fixed_mul_ceil(env, &b, &divisor))
+    }
+
+    /// floor((a * b) / divisor); divisor must be positive.
+    pub fn mul_div_floor(env: &Env, a: i128, b: i128, divisor: i128) -> Result<i128, Error> {
+        if divisor <= 0 {
+            return Err(Error::ArithmeticError);
+        }
+        Ok(a.fixed_mul_floor(env, &b, &divisor))
     }
 }
 

@@ -13,7 +13,7 @@ use soroban_sdk::{Address, Env, Symbol, token::TokenClient};
 
 use crate::common::error::Error;
 use crate::common::storage::Storage;
-use crate::common::types::{AuctionData, AuctionType, SCALAR_7, SCALAR_12};
+use crate::common::types::{self, AuctionData, AuctionType, SCALAR_7, SCALAR_12};
 
 /// Interest Auction management
 pub struct InterestAuction;
@@ -108,7 +108,7 @@ impl InterestAuction {
         // Calculate how many blocks have passed
         let blocks_elapsed = env.ledger().sequence() - auction.block;
 
-        // Calculate lot and bid modifiers (following Blend pattern)
+        // Calculate lot and bid modifiers for the Dutch auction
         let (lot_modifier, bid_modifier) = Self::calculate_modifiers(blocks_elapsed);
 
         // Get token address for the asset
@@ -121,25 +121,17 @@ impl InterestAuction {
             return Err(Error::AuctionNotActive);
         }
 
-        // Calculate interest to receive based on fill percent
-        let interest_to_receive = total_interest
-            .checked_mul(fill_percent)
-            .ok_or(Error::ArithmeticError)?
-            .checked_div(SCALAR_7)
-            .ok_or(Error::ArithmeticError)?
-            .checked_mul(lot_modifier)
-            .ok_or(Error::ArithmeticError)?
-            .checked_div(SCALAR_12)
-            .ok_or(Error::ArithmeticError)?;
+        // Calculate interest to receive: floor(total_interest * fill% / SCALAR_7 * lot_modifier / SCALAR_12)
+        let after_fill_pct =
+            types::rounding::mul_scalar_7(env, total_interest, fill_percent)?;
+        let interest_to_receive =
+            types::rounding::mul_div_floor(env, after_fill_pct, lot_modifier, SCALAR_12)?;
 
         // Calculate backstop tokens to pay
         // At start: pay 100% of interest value in backstop tokens
         // As time passes: pay less backstop tokens for same interest
-        let backstop_to_pay = interest_to_receive
-            .checked_mul(bid_modifier)
-            .ok_or(Error::ArithmeticError)?
-            .checked_div(SCALAR_12)
-            .ok_or(Error::ArithmeticError)?;
+        let backstop_to_pay =
+            types::rounding::mul_div_floor(env, interest_to_receive, bid_modifier, SCALAR_12)?;
 
         // Transfer backstop tokens from bidder to the backstop contract.
         // The backstop contract accumulates these tokens as protocol-generated yield
@@ -178,7 +170,7 @@ impl InterestAuction {
         }
 
         // Update auction lot
-        let remaining_interest = total_interest - interest_to_receive;
+        let remaining_interest = total_interest.saturating_sub(interest_to_receive);
         if remaining_interest <= 0 {
             // Auction complete
             Storage::del_auction(env, auction_id);
@@ -202,8 +194,8 @@ impl InterestAuction {
         Ok((interest_to_receive, backstop_to_pay))
     }
 
-    /// Calculate auction modifiers based on blocks elapsed
-    /// Following the Blend Dutch auction pattern:
+    /// Calculate auction modifiers based on blocks elapsed.
+    /// Dutch auction mechanics:
     /// - Lot modifier: SCALAR_12 → SCALAR_12 (stays at 100%)
     /// - Bid modifier: SCALAR_12 → 0 (100% to 0%)
     ///

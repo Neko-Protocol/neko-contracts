@@ -19,7 +19,6 @@ pub const USER_BUMP: u32 = ONE_DAY_LEDGERS * 120;
 pub const Q4W_LOCK_SECONDS: u64 = 17 * 24 * 60 * 60; // 17 days
 
 /// Maximum number of simultaneous withdrawal queue entries per depositor.
-/// Matches Blend v2.
 pub const MAX_Q4W_SIZE: u32 = 20;
 
 // ============================================================================
@@ -81,6 +80,9 @@ pub enum DataKey {
     PoolContract,
     BackstopToken,
     BackstopThreshold,
+
+    // ---- Temporary (pending admin; TTL in storage::set_proposed_admin) ----
+    ProposedAdmin,
 
     // ---- Persistent storage (per depositor, USER_TTL) ----
     UserBalance(Address),

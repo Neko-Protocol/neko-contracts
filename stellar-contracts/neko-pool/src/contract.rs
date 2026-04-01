@@ -3,7 +3,7 @@ use soroban_sdk::{Address, Env, Symbol, contract, contractimpl};
 use crate::admin::Admin;
 use crate::common::error::Error;
 use crate::common::storage::Storage;
-use crate::common::types::{AssetType, InterestRateParams, PoolState};
+use crate::common::types::{AssetType, InterestRateParams, PoolInitConfig, PoolState};
 use crate::operations::bad_debt::BadDebt;
 use crate::operations::borrowing::Borrowing;
 use crate::operations::collateral::Collateral;
@@ -18,28 +18,19 @@ pub struct LendingContract;
 
 #[contractimpl]
 impl LendingContract {
-    /// Initialize the lending pool
-    pub fn initialize(
-        env: Env,
-        admin: Address,
-        treasury: Address,
-        neko_oracle: Address,
-        reflector_oracle: Address,
-        backstop_take_rate: u32,
-        reserve_factor: u32,
-        origination_fee_rate: u32,
-        liquidation_fee_rate: u32,
-    ) {
+    /// One-time setup at deploy (`register` with args in tests / `deploy_v2` from `neko-factory`).
+    pub fn __constructor(env: Env, config: PoolInitConfig) {
+        config.admin.require_auth();
         Admin::initialize(
             &env,
-            &admin,
-            &treasury,
-            &neko_oracle,
-            &reflector_oracle,
-            backstop_take_rate,
-            reserve_factor,
-            origination_fee_rate,
-            liquidation_fee_rate,
+            &config.admin,
+            &config.treasury,
+            &config.neko_oracle,
+            &config.reflector_oracle,
+            config.backstop_take_rate,
+            config.reserve_factor,
+            config.origination_fee_rate,
+            config.liquidation_fee_rate,
         );
     }
 

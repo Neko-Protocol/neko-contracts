@@ -1,3 +1,4 @@
+use soroban_fixed_point_math::SorobanFixedPoint;
 use soroban_sdk::{Address, Env, Symbol};
 
 use crate::common::error::Error;
@@ -169,19 +170,34 @@ impl Oracles {
         }
     }
 
-    /// Calculate USD value of an amount
-    /// Formula: value = (amount * price) / 10^(price_decimals)
-    /// The price is already in the oracle's scale (price_decimals), so we just multiply and divide
+    /// Notional **USD value** used for collateral limits, health factor, and borrow checks.
+    ///
+    /// - `amount`: token amount in the asset’s on-chain unit (same units the pool uses for balances).
+    /// - `price`: SEP-40 last price; scaled by `10^price_decimals` per 1.0 unit of the asset in USD terms.
+    /// - `_asset_decimals`: reserved (token vs oracle decimal alignment is handled at integration; pass `0`).
+    ///
+    /// **Formula:** `floor(amount × price / 10^price_decimals)` via [`SorobanFixedPoint::fixed_mul_floor`]
+    /// so the division matches the rest of the pool’s fixed-point helpers (truncates toward −∞; for
+    /// positive amounts this matches integer division).
     pub fn calculate_usd_value(
-        _env: &Env,
+        env: &Env,
         amount: i128,
         price: i128,
         _asset_decimals: u32,
         price_decimals: u32,
     ) -> Result<i128, Error> {
-        // Multiply amount by price, then divide by 10^(price_decimals) to get USD value
-        let value = amount.checked_mul(price).ok_or(Error::ArithmeticError)?;
+        if amount == 0 || price <= 0 {
+            return Ok(0);
+        }
+        let scale = Self::ten_pow(price_decimals)?;
+        Ok(amount.fixed_mul_floor(env, &price, &scale))
+    }
 
-        Ok(value / 10i128.pow(price_decimals))
+    /// `10^exp` as `i128` for oracle price scales (SEP-40 decimals are small).
+    fn ten_pow(exp: u32) -> Result<i128, Error> {
+        if exp > 38 {
+            return Err(Error::ArithmeticError);
+        }
+        Ok(10i128.pow(exp))
     }
 }

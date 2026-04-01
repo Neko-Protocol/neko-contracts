@@ -2,6 +2,7 @@
 resolver = "2"
 members = [
   "neko-pool",
+  "neko-factory",
   "neko-backstop",
   "neko-oracle",
   "neko-token",

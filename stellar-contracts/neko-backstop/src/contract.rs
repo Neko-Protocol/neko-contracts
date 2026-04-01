@@ -1,5 +1,6 @@
 use soroban_sdk::{Address, Env, contract, contractimpl, panic_with_error};
 
+use crate::admin::Admin;
 use crate::error::Error;
 use crate::operations::Backstop;
 use crate::storage::Storage;
@@ -47,6 +48,20 @@ impl NekoBackstop {
     pub fn set_backstop_token(env: Env, token: Address) {
         Storage::get_admin(&env).require_auth();
         Storage::set_backstop_token(&env, &token);
+    }
+
+    /// Step 1 of two-step admin transfer. Current admin only.
+    pub fn propose_admin(env: Env, proposed: Address) {
+        Admin::propose_admin(&env, &proposed);
+    }
+
+    /// Step 2: pending admin accepts (must match `propose_admin`).
+    pub fn accept_admin(env: Env) {
+        Admin::accept_admin(&env);
+    }
+
+    pub fn get_admin(env: Env) -> Address {
+        Storage::get_admin(&env)
     }
 
     // ========== Depositor Functions ==========

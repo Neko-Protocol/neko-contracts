@@ -70,9 +70,11 @@ fuzz_target!(|input: Input| {
     StellarAssetClient::new(&fixture.env, &fixture.bond.address)
         .mint(&fixture.bob, &input.bob_bond.0);
 
-    // Track d_rate before each command to verify monotonicity
+    // Track exchange rates before each command (interest accrual: non-decreasing)
     let mut prev_d_rate_usdc = fixture.pool.get_d_token_rate(&fixture.sym_usdc);
     let mut prev_d_rate_xlm = fixture.pool.get_d_token_rate(&fixture.sym_xlm);
+    let mut prev_b_rate_usdc = fixture.pool.get_b_token_rate(&fixture.sym_usdc);
+    let mut prev_b_rate_xlm = fixture.pool.get_b_token_rate(&fixture.sym_xlm);
 
     for cmd in &input.commands {
         cmd.run(&fixture);
@@ -83,7 +85,7 @@ fuzz_target!(|input: Input| {
         fixture.assert_pool_solvency();
         fixture.assert_utilization();
 
-        // 2. d_rate must be monotonically non-decreasing
+        // 2. d_rate and b_rate must be monotonically non-decreasing
         let d_rate_usdc = fixture.pool.get_d_token_rate(&fixture.sym_usdc);
         let d_rate_xlm = fixture.pool.get_d_token_rate(&fixture.sym_xlm);
         assert!(
@@ -96,6 +98,10 @@ fuzz_target!(|input: Input| {
         );
         prev_d_rate_usdc = d_rate_usdc;
         prev_d_rate_xlm = d_rate_xlm;
+
+        fixture.assert_b_rates_non_decreasing(prev_b_rate_usdc, prev_b_rate_xlm);
+        prev_b_rate_usdc = fixture.pool.get_b_token_rate(&fixture.sym_usdc);
+        prev_b_rate_xlm = fixture.pool.get_b_token_rate(&fixture.sym_xlm);
 
         // 3. No negative pool balances
         assert!(fixture.pool.get_pool_balance(&fixture.sym_usdc) >= 0);

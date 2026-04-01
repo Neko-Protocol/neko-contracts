@@ -1,7 +1,7 @@
 #![cfg(test)]
 extern crate std;
 
-use crate::common::types::{AssetType, InterestRateParams, PoolState};
+use crate::common::types::{AssetType, InterestRateParams, PoolInitConfig, PoolState};
 use crate::neko_oracle;
 use crate::{LendingContract, LendingContractClient};
 use soroban_sdk::{Address, Env, Symbol, symbol_short, testutils::Address as _, vec};
@@ -29,29 +29,38 @@ fn create_oracle(e: &Env) -> (neko_oracle::Client<'_>, Address) {
     (client, contract_address)
 }
 
-// Helper: Create and initialize lending contract
+/// Default fee params used across pool unit tests (7 decimals).
+pub(crate) fn default_pool_init_rates() -> (u32, u32, u32, u32) {
+    (
+        500_000,   // backstop_take_rate: 5%
+        1_000_000, // reserve_factor: 10%
+        40_000,    // origination_fee_rate: 0.4%
+        100_000,   // liquidation_fee_rate: 1%
+    )
+}
+
+// Helper: same deploy path as `neko-factory` (`deploy_v2` with `PoolInitConfig`).
 fn create_lending_contract(
     e: &Env,
     admin: Address,
     neko_oracle: Address,
     reflector_oracle: Address,
 ) -> LendingContractClient<'_> {
-    let contract_id = e.register(LendingContract, ());
-    let client = LendingContractClient::new(e, &contract_id);
+    e.mock_all_auths();
     let treasury = Address::generate(e);
-
-    client.initialize(
-        &admin,
-        &treasury,
-        &neko_oracle,
-        &reflector_oracle,
-        &500_000,           // backstop_take_rate: 5%
-        &1_000_000,         // reserve_factor: 10%
-        &40_000,            // origination_fee_rate: 0.4%
-        &100_000,           // liquidation_fee_rate: 1%
-    );
-
-    client
+    let (bstop, res, orig, liq) = default_pool_init_rates();
+    let config = PoolInitConfig {
+        admin,
+        treasury,
+        neko_oracle,
+        reflector_oracle,
+        backstop_take_rate: bstop,
+        reserve_factor: res,
+        origination_fee_rate: orig,
+        liquidation_fee_rate: liq,
+    };
+    let contract_id = e.register(LendingContract, (config,));
+    LendingContractClient::new(e, &contract_id)
 }
 
 // Helper: Create default interest rate params (all values use 7 decimals)
@@ -82,43 +91,6 @@ fn test_initialization() {
     // Check pool state (should be OnIce initially)
     let state = client.get_pool_state();
     assert_eq!(state, PoolState::OnIce);
-}
-
-#[test]
-#[should_panic(expected = "Error(Contract, #3)")]
-fn test_double_initialization() {
-    let env = Env::default();
-    env.mock_all_auths();
-    let admin = Address::generate(&env);
-    let (_, neko_oracle) = create_oracle(&env);
-    let (_, reflector_oracle) = create_oracle(&env);
-
-    let contract_id = env.register(LendingContract, ());
-    let client = LendingContractClient::new(&env, &contract_id);
-
-    let treasury = Address::generate(&env);
-    client.initialize(
-        &admin,
-        &treasury,
-        &neko_oracle,
-        &reflector_oracle,
-        &500_000,  // backstop_take_rate: 5%
-        &1_000_000, // reserve_factor: 10%
-        &40_000,   // origination_fee_rate: 0.4%
-        &100_000,  // liquidation_fee_rate: 1%
-    );
-
-    // Try to initialize again
-    client.initialize(
-        &admin,
-        &treasury,
-        &neko_oracle,
-        &reflector_oracle,
-        &500_000,
-        &1_000_000,
-        &40_000,
-        &100_000,
-    );
 }
 
 #[test]

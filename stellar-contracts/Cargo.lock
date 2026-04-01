@@ -902,6 +902,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "neko-factory"
+version = "0.0.1"
+dependencies = [
+ "neko-pool",
+ "soroban-sdk",
+]
+
+[[package]]
 name = "neko-faucet"
 version = "0.0.1"
 dependencies = [

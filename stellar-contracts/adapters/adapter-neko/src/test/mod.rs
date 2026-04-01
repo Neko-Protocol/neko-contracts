@@ -47,24 +47,27 @@ fn create_neko_oracle(env: &Env) -> Address {
 fn create_lending_pool(env: &Env, token: &Address, oracle_addr: &Address) -> Address {
     use neko_pool::AssetType;
 
-    env.mock_all_auths();
+    // Pool deploy runs `__constructor` inside `register` (nested invocation); admin.require_auth
+    // needs non-root auth recording to pass through nested calls.
+    env.mock_all_auths_allowing_non_root_auth();
 
     let lending_admin = Address::generate(env);
     let treasury = Address::generate(env);
     let reflector = create_neko_oracle(env);
-    let pool_id = env.register(neko_pool::WASM, ());
-    let pool = neko_pool::Client::new(env, &pool_id);
-
-    pool.initialize(
-        &lending_admin,
-        &treasury,
-        oracle_addr,
-        &reflector,
-        &500_000u32,  // backstop_take_rate 5%
-        &1_000_000u32, // reserve_factor 10%
-        &40_000u32,   // origination_fee_rate 0.4%
-        &100_000u32,  // liquidation_fee_rate 1%
+    let pool_id = env.register(
+        neko_pool::WASM,
+        (neko_pool::PoolInitConfig {
+            admin: lending_admin.clone(),
+            treasury,
+            neko_oracle: oracle_addr.clone(),
+            reflector_oracle: reflector,
+            backstop_take_rate: 500_000u32,
+            reserve_factor: 1_000_000u32,
+            origination_fee_rate: 40_000u32,
+            liquidation_fee_rate: 100_000u32,
+        },),
     );
+    let pool = neko_pool::Client::new(env, &pool_id);
 
     pool.set_token_contract(&CETES(env), token, &AssetType::Rwa);
 

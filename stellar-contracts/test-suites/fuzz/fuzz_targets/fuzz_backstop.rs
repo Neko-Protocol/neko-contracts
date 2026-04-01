@@ -41,6 +41,12 @@ enum Command {
 
 fuzz_target!(|input: Input| {
     let fixture = create_fixture_with_data();
+    let pool_addr = fixture.pool.address.clone();
+
+    let mut prev_d_usdc = fixture.pool.get_d_token_rate(&fixture.sym_usdc);
+    let mut prev_d_xlm = fixture.pool.get_d_token_rate(&fixture.sym_xlm);
+    let mut prev_b_usdc = fixture.pool.get_b_token_rate(&fixture.sym_usdc);
+    let mut prev_b_xlm = fixture.pool.get_b_token_rate(&fixture.sym_xlm);
 
     for cmd in &input.commands {
         cmd.run(&fixture);
@@ -49,9 +55,26 @@ fuzz_target!(|input: Input| {
 
         fixture.assert_backstop_consistency();
 
+        // Backstop → pool link is fixed at deploy; these commands must not repoint it.
+        assert_eq!(
+            fixture.backstop.get_pool_contract(),
+            pool_addr,
+            "backstop pool contract address changed"
+        );
+
         // Backstop notifies the pool on each op — lending book must stay solvent.
         fixture.assert_pool_solvency();
         fixture.assert_utilization();
+
+        let d_usdc = fixture.pool.get_d_token_rate(&fixture.sym_usdc);
+        let d_xlm = fixture.pool.get_d_token_rate(&fixture.sym_xlm);
+        assert!(d_usdc >= prev_d_usdc, "d_rate_usdc decreased");
+        assert!(d_xlm >= prev_d_xlm, "d_rate_xlm decreased");
+        prev_d_usdc = d_usdc;
+        prev_d_xlm = d_xlm;
+        fixture.assert_b_rates_non_decreasing(prev_b_usdc, prev_b_xlm);
+        prev_b_usdc = fixture.pool.get_b_token_rate(&fixture.sym_usdc);
+        prev_b_xlm = fixture.pool.get_b_token_rate(&fixture.sym_xlm);
 
         assert!(fixture.backstop.get_total() >= 0, "negative backstop total");
 
