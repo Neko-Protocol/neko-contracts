@@ -1,0 +1,54 @@
+name: Stellar contracts
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "stellar-contracts/**"
+      - ".github/workflows/stellar-contracts.yml"
+  pull_request:
+    paths:
+      - "stellar-contracts/**"
+      - ".github/workflows/stellar-contracts.yml"
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  test:
+    name: Workspace test
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: stellar-contracts
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: stellar-contracts
+
+      - name: cargo test --workspace
+        run: cargo test --workspace
+
+  fuzz-build:
+    name: Fuzz harness build (nightly)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: stellar-contracts/test-suites/fuzz
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust nightly (fuzz crate)
+        uses: dtolnay/rust-toolchain@nightly
+
+      - name: cargo build --release (libfuzzer targets)
+        run: cargo build --release

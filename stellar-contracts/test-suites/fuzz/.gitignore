@@ -1,0 +1,5 @@
+# cargo-fuzz / libFuzzer
+target/
+corpus/
+artifacts/
+crash-*

@@ -1,0 +1,14 @@
+[package]
+name = "test-suites"
+version = "0.0.0"
+publish = false
+edition.workspace = true
+
+[lib]
+crate-type = ["rlib"]
+doctest = false
+
+[dependencies]
+soroban-sdk = { workspace = true, features = ["testutils"] }
+neko-pool = { path = "../neko-pool", features = ["testutils"] }
+neko-backstop = { path = "../neko-backstop", features = ["testutils"] }

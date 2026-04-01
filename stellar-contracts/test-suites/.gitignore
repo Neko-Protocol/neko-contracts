@@ -1,0 +1,5 @@
+# Fuzz workspace build output and local artifacts (see fuzz/.gitignore)
+fuzz/target/
+fuzz/corpus/
+fuzz/artifacts/
+fuzz/crash-*
