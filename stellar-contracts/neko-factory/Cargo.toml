@@ -17,10 +17,10 @@ testutils = ["soroban-sdk/testutils"]
 
 [dependencies]
 soroban-sdk = { workspace = true }
-neko-pool = { path = "../neko-pool" }
 
 [dev-dependencies]
 soroban-sdk = { workspace = true, features = ["testutils"] }
+neko-pool = { path = "../neko-pool", features = ["testutils"] }
 
 [package.metadata.stellar]
 contract = true

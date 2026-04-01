@@ -2,7 +2,7 @@ use soroban_sdk::{
     contract, contractimpl, panic_with_error, Address, Bytes, BytesN, Env, IntoVal, Vec,
 };
 
-use neko_pool::PoolInitConfig;
+use crate::pool_wasm::PoolInitConfig;
 
 use crate::error::Error;
 use crate::events;
