@@ -89,7 +89,7 @@ All adapters implement the IAdapter protocol to plug into rwa-vault:
 ## Key Conventions
 
 - EVM uses Solidity 0.8.27 with optimizer (200 runs), Cancun EVM version
-- Stellar uses Soroban SDK 23.0.4, Rust Edition 2024
+- Stellar uses Soroban SDK 25.3.0, Rust Edition 2024
 - Tests mirror source structure in `test/` directories
 - OpenZeppelin contracts for ERC20, AccessControl, ReentrancyGuard
 - Adapters are `cdylib` crates; some also expose `rlib` for testing utilities

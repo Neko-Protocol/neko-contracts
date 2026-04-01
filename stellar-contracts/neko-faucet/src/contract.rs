@@ -18,10 +18,22 @@ impl Faucet {
     }
 
     /// Mint multiple tokens in a single invocation.
-    /// The recipient (to) must authorize in the root context so sub-calls to token.mint pass auth.
+    /// Each distinct recipient must authorize once; repeating the same `to` does not call
+    /// `require_auth` again (Soroban rejects duplicate auth for the same address in one frame).
     pub fn bulk_mint(env: Env, requests: Vec<MintRequest>) {
+        let mut authorized_recipients = Vec::<Address>::new(&env);
         for req in requests.iter() {
-            req.to.require_auth();
+            let mut seen = false;
+            for prev in authorized_recipients.iter() {
+                if prev == req.to {
+                    seen = true;
+                    break;
+                }
+            }
+            if !seen {
+                req.to.require_auth();
+                authorized_recipients.push_back(req.to.clone());
+            }
             env.invoke_contract::<()>(
                 &req.token,
                 &Symbol::new(&env, "mint"),

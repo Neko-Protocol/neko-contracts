@@ -101,7 +101,7 @@ impl Borrowing {
         let borrow_plus_fee = amount
             .checked_add(origination_fee)
             .ok_or(Error::ArithmeticError)?;
-        let d_tokens = types::rounding::to_d_token_up(borrow_plus_fee, d_token_rate)?;
+        let d_tokens = types::rounding::to_d_token_up(env, borrow_plus_fee, d_token_rate)?;
 
         // Track origination fee as treasury credit — update cached reserve and write once
         if origination_fee > 0 {

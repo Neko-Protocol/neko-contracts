@@ -2,6 +2,7 @@ use soroban_sdk::{Address, Env, IntoVal, panic_with_error, symbol_short, vec};
 
 use crate::common::error::Error;
 use crate::common::types::{COMPLIANCE_KEY, IDENTITY_KEY};
+use crate::compliance::freeze::AuthorizationStorage;
 
 /// SEP-57 compliance configuration and transfer checks
 pub struct Compliance;
@@ -36,6 +37,8 @@ impl Compliance {
     /// Check all compliance requirements before a transfer.
     /// Delegates to SEP-57 compliance contract if configured.
     pub fn check_transfer(env: &Env, from: &Address, to: &Address, amount: i128) {
+        AuthorizationStorage::require_authorized(env, from);
+        AuthorizationStorage::require_authorized(env, to);
         // Delegate to SEP-57 compliance contract if configured
         if let Some(compliance_addr) = Self::get_compliance(env) {
             let can_transfer: bool = env.invoke_contract(

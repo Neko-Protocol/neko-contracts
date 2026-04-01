@@ -9,7 +9,7 @@ use soroban_sdk::{
 };
 
 use crate::neko_pool;
-use crate::{RwaLendingAdapter, NekoAdapterClient};
+use crate::{NekoAdapter, NekoAdapterClient};
 
 /// Import neko-oracle WASM for test setup.
 /// Build first: cargo build --target wasm32v1-none --release -p neko-oracle
@@ -24,7 +24,7 @@ mod neko_oracle {
 // ============================================================================
 
 /// Asset symbol used in all tests
-const CETES: fn(&Env) -> Symbol = |e| symbol_short!("CETES");
+const CETES: fn(&Env) -> Symbol = |_e| symbol_short!("CETES");
 
 fn create_token<'a>(env: &'a Env, admin: &Address) -> (TokenClient<'a>, StellarAssetClient<'a>) {
     let sac = env.register_stellar_asset_contract_v2(admin.clone());
@@ -47,39 +47,42 @@ fn create_neko_oracle(env: &Env) -> Address {
 fn create_lending_pool(env: &Env, token: &Address, oracle_addr: &Address) -> Address {
     use neko_pool::AssetType;
 
+    env.mock_all_auths();
+
     let lending_admin = Address::generate(env);
-    let reflector = create_neko_oracle(env); // second oracle for reflector
+    let treasury = Address::generate(env);
+    let reflector = create_neko_oracle(env);
     let pool_id = env.register(neko_pool::WASM, ());
     let pool = neko_pool::Client::new(env, &pool_id);
 
     pool.initialize(
         &lending_admin,
+        &treasury,
         oracle_addr,
         &reflector,
-        &1_000_000_000_000i128, // backstop_threshold
-        &500_000u32,            // backstop_take_rate 5%
+        &500_000u32,  // backstop_take_rate 5%
+        &1_000_000u32, // reserve_factor 10%
+        &40_000u32,   // origination_fee_rate 0.4%
+        &100_000u32,  // liquidation_fee_rate 1%
     );
 
-    env.mock_all_auths();
-
-    // Register CETES token in the pool
     pool.set_token_contract(&CETES(env), token, &AssetType::Rwa);
 
-    // Set interest rate params for CETES
-    pool.set_interest_rate_params(
-        &CETES(env),
-        &neko_pool::InterestRateParams {
-            target_util: 7_500_000,
-            max_util: 9_500_000,
-            r_base: 100_000,
-            r_one: 500_000,
-            r_two: 5_000_000,
-            r_three: 15_000_000,
-            reactivity: 200,
-        },
-    );
+    let params = neko_pool::InterestRateParams {
+        target_util: 7_500_000,
+        max_util: 9_500_000,
+        r_base: 100_000,
+        r_one: 500_000,
+        r_two: 5_000_000,
+        r_three: 15_000_000,
+        reactivity: 200,
+        l_factor: 10_000_000,
+        supply_cap: 0,
+        enabled: true,
+    };
+    pool.queue_set_reserve_params(&CETES(env), &params);
+    pool.apply_queued_reserve_params(&CETES(env));
 
-    // Activate pool
     pool.set_pool_state(&neko_pool::PoolState::Active);
 
     pool_id
@@ -92,7 +95,7 @@ fn create_adapter<'a>(
     lending_pool: &Address,
     deposit_token: &Address,
 ) -> NekoAdapterClient<'a> {
-    let contract_id = env.register(RwaLendingAdapter, ());
+    let contract_id = env.register(NekoAdapter, ());
     let client = NekoAdapterClient::new(env, &contract_id);
     client.initialize(admin, vault, lending_pool, deposit_token, &CETES(env));
     client

@@ -196,6 +196,11 @@ impl LendingContract {
         Lending::get_b_token_supply(&env, &asset)
     }
 
+    /// Get total dToken supply for an asset
+    pub fn get_d_token_supply(env: Env, asset: Symbol) -> i128 {
+        Storage::get_d_token_supply(&env, &asset)
+    }
+
     // ========== Borrowing Functions (dTokens) ==========
 
     /// Borrow crypto asset from the pool

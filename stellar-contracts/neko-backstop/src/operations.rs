@@ -240,6 +240,7 @@ impl Backstop {
         let pool = Storage::get_pool_contract(env);
         let func = Symbol::new(env, "update_pool_state_from_backstop");
         let mut args: Vec<Val> = Vec::new(env);
+        args.push_back(env.current_contract_address().into_val(env));
         args.push_back(state_u32.into_val(env));
         let _: () = env.invoke_contract(&pool, &func, args);
 

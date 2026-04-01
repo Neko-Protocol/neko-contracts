@@ -327,102 +327,79 @@ pub struct PriceData {
 
 #[allow(dead_code)]
 pub mod rounding {
-    use super::SCALAR_12;
+    use soroban_fixed_point_math::SorobanFixedPoint;
+    use soroban_sdk::Env;
+
+    use super::{SCALAR_7, SCALAR_12};
     use crate::common::error::Error;
 
     /// Convert underlying asset amount to bTokens with rounding down (floor)
     /// Used when depositing: favors the protocol (mints fewer bTokens)
     /// Formula: b_tokens = floor(amount * SCALAR_12 / b_rate)
-    pub fn to_b_token_down(amount: i128, b_rate: i128) -> Result<i128, Error> {
-        amount
-            .checked_mul(SCALAR_12)
-            .ok_or(Error::ArithmeticError)?
-            .checked_div(b_rate)
-            .ok_or(Error::ArithmeticError)
+    pub fn to_b_token_down(env: &Env, amount: i128, b_rate: i128) -> Result<i128, Error> {
+        if b_rate <= 0 {
+            return Err(Error::ArithmeticError);
+        }
+        Ok(amount.fixed_mul_floor(env, &SCALAR_12, &b_rate))
     }
 
     /// Convert underlying asset amount to bTokens with rounding up (ceil)
     /// Used when withdrawing: favors the protocol (burns more bTokens)
     /// Formula: b_tokens = ceil(amount * SCALAR_12 / b_rate)
-    pub fn to_b_token_up(amount: i128, b_rate: i128) -> Result<i128, Error> {
-        let numerator = amount
-            .checked_mul(SCALAR_12)
-            .ok_or(Error::ArithmeticError)?
-            .checked_add(b_rate)
-            .ok_or(Error::ArithmeticError)?
-            .checked_sub(1)
-            .ok_or(Error::ArithmeticError)?;
-        numerator.checked_div(b_rate).ok_or(Error::ArithmeticError)
+    pub fn to_b_token_up(env: &Env, amount: i128, b_rate: i128) -> Result<i128, Error> {
+        if b_rate <= 0 {
+            return Err(Error::ArithmeticError);
+        }
+        Ok(amount.fixed_mul_ceil(env, &SCALAR_12, &b_rate))
     }
 
     /// Convert bTokens to underlying asset amount with rounding down (floor)
     /// Used when calculating withdrawable amount
     /// Formula: underlying = floor(b_tokens * b_rate / SCALAR_12)
-    pub fn to_underlying_from_b_token(b_tokens: i128, b_rate: i128) -> Result<i128, Error> {
-        b_tokens
-            .checked_mul(b_rate)
-            .ok_or(Error::ArithmeticError)?
-            .checked_div(SCALAR_12)
-            .ok_or(Error::ArithmeticError)
+    pub fn to_underlying_from_b_token(env: &Env, b_tokens: i128, b_rate: i128) -> Result<i128, Error> {
+        Ok(b_tokens.fixed_mul_floor(env, &b_rate, &SCALAR_12))
     }
 
     /// Convert underlying asset amount to dTokens with rounding up (ceil)
     /// Used when borrowing: favors the protocol (mints more dTokens)
     /// Formula: d_tokens = ceil(amount * SCALAR_12 / d_rate)
-    pub fn to_d_token_up(amount: i128, d_rate: i128) -> Result<i128, Error> {
-        let numerator = amount
-            .checked_mul(SCALAR_12)
-            .ok_or(Error::ArithmeticError)?
-            .checked_add(d_rate)
-            .ok_or(Error::ArithmeticError)?
-            .checked_sub(1)
-            .ok_or(Error::ArithmeticError)?;
-        numerator.checked_div(d_rate).ok_or(Error::ArithmeticError)
+    pub fn to_d_token_up(env: &Env, amount: i128, d_rate: i128) -> Result<i128, Error> {
+        if d_rate <= 0 {
+            return Err(Error::ArithmeticError);
+        }
+        Ok(amount.fixed_mul_ceil(env, &SCALAR_12, &d_rate))
     }
 
     /// Convert underlying asset amount to dTokens with rounding down (floor)
     /// Used when repaying: favors the protocol (burns fewer dTokens)
     /// Formula: d_tokens = floor(amount * SCALAR_12 / d_rate)
-    pub fn to_d_token_down(amount: i128, d_rate: i128) -> Result<i128, Error> {
-        amount
-            .checked_mul(SCALAR_12)
-            .ok_or(Error::ArithmeticError)?
-            .checked_div(d_rate)
-            .ok_or(Error::ArithmeticError)
+    pub fn to_d_token_down(env: &Env, amount: i128, d_rate: i128) -> Result<i128, Error> {
+        if d_rate <= 0 {
+            return Err(Error::ArithmeticError);
+        }
+        Ok(amount.fixed_mul_floor(env, &SCALAR_12, &d_rate))
     }
 
     /// Convert dTokens to underlying debt amount with rounding up (ceil)
     /// Used when calculating total debt owed
     /// Formula: underlying = ceil(d_tokens * d_rate / SCALAR_12)
-    pub fn to_underlying_from_d_token(d_tokens: i128, d_rate: i128) -> Result<i128, Error> {
-        let numerator = d_tokens
-            .checked_mul(d_rate)
-            .ok_or(Error::ArithmeticError)?
-            .checked_add(SCALAR_12)
-            .ok_or(Error::ArithmeticError)?
-            .checked_sub(1)
-            .ok_or(Error::ArithmeticError)?;
-        numerator
-            .checked_div(SCALAR_12)
-            .ok_or(Error::ArithmeticError)
+    pub fn to_underlying_from_d_token(env: &Env, d_tokens: i128, d_rate: i128) -> Result<i128, Error> {
+        Ok(d_tokens.fixed_mul_ceil(env, &d_rate, &SCALAR_12))
     }
 
     /// Multiply two values with 7 decimal precision
     /// Result = (a * b) / SCALAR_7
-    pub fn mul_scalar_7(a: i128, b: i128) -> Result<i128, Error> {
-        a.checked_mul(b)
-            .ok_or(Error::ArithmeticError)?
-            .checked_div(super::SCALAR_7)
-            .ok_or(Error::ArithmeticError)
+    pub fn mul_scalar_7(env: &Env, a: i128, b: i128) -> Result<i128, Error> {
+        Ok(a.fixed_mul_floor(env, &b, &SCALAR_7))
     }
 
     /// Divide two values with 7 decimal precision
     /// Result = (a * SCALAR_7) / b
-    pub fn div_scalar_7(a: i128, b: i128) -> Result<i128, Error> {
-        a.checked_mul(super::SCALAR_7)
-            .ok_or(Error::ArithmeticError)?
-            .checked_div(b)
-            .ok_or(Error::ArithmeticError)
+    pub fn div_scalar_7(env: &Env, a: i128, b: i128) -> Result<i128, Error> {
+        if b == 0 {
+            return Err(Error::ArithmeticError);
+        }
+        Ok(a.fixed_mul_floor(env, &SCALAR_7, &b))
     }
 }
 

@@ -15,14 +15,14 @@ use crate::types::{PoolState, Q4W_LOCK_SECONDS};
 // ---------------------------------------------------------------------------
 
 mod mock_pool {
-    use soroban_sdk::{contract, contractimpl, Env};
+    use soroban_sdk::{contract, contractimpl, Address, Env};
 
     #[contract]
     pub struct MockPool;
 
     #[contractimpl]
     impl MockPool {
-        pub fn update_pool_state_from_backstop(_env: Env, _state: u32) {}
+        pub fn update_pool_state_from_backstop(_env: Env, _caller: Address, _state: u32) {}
     }
 }
 

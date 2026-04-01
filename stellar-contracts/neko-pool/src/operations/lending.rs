@@ -47,7 +47,7 @@ impl Lending {
 
         // Calculate bTokens with rounding down
         // This favors the protocol by minting fewer bTokens
-        let b_tokens = types::rounding::to_b_token_down(amount, b_token_rate)?;
+        let b_tokens = types::rounding::to_b_token_down(env, amount, b_token_rate)?;
 
         // Transfer asset from lender to pool
         let token_address =

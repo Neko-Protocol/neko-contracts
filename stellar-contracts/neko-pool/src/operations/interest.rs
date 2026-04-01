@@ -244,88 +244,90 @@ impl Interest {
         let backstop_take_rate = backstop_take_rate as i128;
         let reserve_factor = reserve_factor as i128;
 
-        // Save old d_rate before updating
+        // Underlying value of all b_tokens before this accrual (Blend: total_supply pre-update)
+        let pre_update_supply = reserve
+            .b_supply
+            .checked_mul(reserve.b_rate)
+            .ok_or(Error::ArithmeticError)?
+            .checked_div(SCALAR_12)
+            .ok_or(Error::ArithmeticError)?;
+
         let old_d_rate = reserve.d_rate;
 
-        // Update d_rate: new_d_rate = old_d_rate * accrual / SCALAR_12
+        // Borrowers accrue at the loan rate: new_d_rate = old_d_rate * accrual / SCALAR_12
         reserve.d_rate = old_d_rate
             .checked_mul(accrual)
             .ok_or(Error::ArithmeticError)?
             .checked_div(SCALAR_12)
             .ok_or(Error::ArithmeticError)?;
 
-        // Calculate protocol takes from interest earned
-        let total_protocol_rate = backstop_take_rate + reserve_factor;
+        let rate_increase = reserve
+            .d_rate
+            .checked_sub(old_d_rate)
+            .ok_or(Error::ArithmeticError)?;
 
-        if reserve.d_supply > 0 && total_protocol_rate > 0 {
-            // Interest earned = d_supply * (new_d_rate - old_d_rate) / SCALAR_12
-            let rate_increase = reserve
-                .d_rate
-                .checked_sub(old_d_rate)
-                .ok_or(Error::ArithmeticError)?;
-
-            let interest_earned = reserve
+        // Interest actually charged on debt this period (underlying units)
+        let interest_earned = if reserve.d_supply > 0 {
+            reserve
                 .d_supply
                 .checked_mul(rate_increase)
                 .ok_or(Error::ArithmeticError)?
                 .checked_div(SCALAR_12)
-                .ok_or(Error::ArithmeticError)?;
+                .ok_or(Error::ArithmeticError)?
+        } else {
+            0
+        };
 
-            // Backstop credit = interest_earned * backstop_take_rate / SCALAR_7
+        // Protocol takes — same as before, proportional to interest_earned
+        let mut backstop_credit = 0_i128;
+        let mut treasury_credit = 0_i128;
+        if interest_earned > 0 {
             if backstop_take_rate > 0 {
-                let backstop_credit = interest_earned
+                backstop_credit = interest_earned
                     .checked_mul(backstop_take_rate)
                     .ok_or(Error::ArithmeticError)?
                     .checked_div(SCALAR_7)
                     .ok_or(Error::ArithmeticError)?;
-                reserve.backstop_credit += backstop_credit;
+                reserve.backstop_credit = reserve
+                    .backstop_credit
+                    .checked_add(backstop_credit)
+                    .ok_or(Error::ArithmeticError)?;
             }
-
-            // Treasury credit (reserve factor) = interest_earned * reserve_factor / SCALAR_7
             if reserve_factor > 0 {
-                let treasury_credit = interest_earned
+                treasury_credit = interest_earned
                     .checked_mul(reserve_factor)
                     .ok_or(Error::ArithmeticError)?
                     .checked_div(SCALAR_7)
                     .ok_or(Error::ArithmeticError)?;
-                reserve.treasury_credit += treasury_credit;
+                reserve.treasury_credit = reserve
+                    .treasury_credit
+                    .checked_add(treasury_credit)
+                    .ok_or(Error::ArithmeticError)?;
             }
         }
 
-        // Update b_rate: lenders receive interest minus total protocol take
+        // Lenders: only the interest actually paid (minus protocol) increases b_token value.
+        // Multiplying b_rate by a scaled accrual factor was wrong at util < 100% — it credited
+        // lenders at the full borrow rate on total supply instead of on debt (Blend v2 sets
+        // b_rate = (pre_supply + accrued_to_lenders) / b_supply).
         if reserve.b_supply > 0 {
-            let lender_accrual = if total_protocol_rate > 0 {
-                // lender_portion = SCALAR_7 - total_protocol_rate
-                let lender_portion = SCALAR_7
-                    .checked_sub(total_protocol_rate)
-                    .ok_or(Error::ArithmeticError)?;
-
-                let accrual_increase = accrual
-                    .checked_sub(SCALAR_12)
-                    .ok_or(Error::ArithmeticError)?;
-
-                let lender_increase = accrual_increase
-                    .checked_mul(lender_portion)
-                    .ok_or(Error::ArithmeticError)?
-                    .checked_div(SCALAR_7)
-                    .ok_or(Error::ArithmeticError)?;
-
-                SCALAR_12
-                    .checked_add(lender_increase)
-                    .ok_or(Error::ArithmeticError)?
-            } else {
-                accrual
-            };
-
-            reserve.b_rate = reserve
-                .b_rate
-                .checked_mul(lender_accrual)
+            let lender_accrued = interest_earned
+                .checked_sub(backstop_credit)
                 .ok_or(Error::ArithmeticError)?
-                .checked_div(SCALAR_12)
+                .checked_sub(treasury_credit)
+                .ok_or(Error::ArithmeticError)?;
+
+            let new_supply = pre_update_supply
+                .checked_add(lender_accrued)
+                .ok_or(Error::ArithmeticError)?;
+
+            reserve.b_rate = new_supply
+                .checked_mul(SCALAR_12)
+                .ok_or(Error::ArithmeticError)?
+                .checked_div(reserve.b_supply)
                 .ok_or(Error::ArithmeticError)?;
         }
 
-        // Update ir_mod and last_time
         reserve.ir_mod = new_ir_mod;
         reserve.last_time = current_time;
 

@@ -9,11 +9,15 @@ repository.workspace = true
 publish = false
 
 [lib]
-crate-type = ["cdylib"]
+crate-type = ["cdylib", "rlib"]
 doctest = false
+
+[features]
+testutils = ["soroban-sdk/testutils"]
 
 [dependencies]
 soroban-sdk = { workspace = true }
+soroban-fixed-point-math = { workspace = true }
 neko-oracle = { path = "../neko-oracle" }
 neko-token = { path = "../neko-token" }
 
