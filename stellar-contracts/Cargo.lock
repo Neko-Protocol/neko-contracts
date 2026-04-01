@@ -3,6 +3,36 @@
 version = 4
 
 [[package]]
+name = "adapter-aquarius"
+version = "0.0.1"
+dependencies = [
+ "soroban-sdk",
+]
+
+[[package]]
+name = "adapter-blend"
+version = "0.0.1"
+dependencies = [
+ "soroban-sdk",
+]
+
+[[package]]
+name = "adapter-rwa-lending"
+version = "0.0.1"
+dependencies = [
+ "rwa-oracle",
+ "rwa-token",
+ "soroban-sdk",
+]
+
+[[package]]
+name = "adapter-soroswap"
+version = "0.0.1"
+dependencies = [
+ "soroban-sdk",
+]
+
+[[package]]
 name = "ahash"
 version = "0.8.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1035,8 +1065,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b39cdef0fa800fc44525c84ccb54a029961a8215f9619753635a9c0d2538d46d"
 
 [[package]]
+name = "rwa-faucet"
+version = "0.0.1"
+dependencies = [
+ "soroban-sdk",
+]
+
+[[package]]
 name = "rwa-lending"
-version = "1.0.0"
+version = "0.0.1"
 dependencies = [
  "rwa-oracle",
  "rwa-token",
@@ -1045,23 +1082,23 @@ dependencies = [
 
 [[package]]
 name = "rwa-oracle"
-version = "0.0.0"
-dependencies = [
- "soroban-sdk",
-]
-
-[[package]]
-name = "rwa-perps"
-version = "1.0.0"
+version = "0.0.1"
 dependencies = [
  "soroban-sdk",
 ]
 
 [[package]]
 name = "rwa-token"
-version = "1.0.0"
+version = "0.0.1"
 dependencies = [
  "rwa-oracle",
+ "soroban-sdk",
+]
+
+[[package]]
+name = "rwa-vault"
+version = "0.0.1"
+dependencies = [
  "soroban-sdk",
 ]
 

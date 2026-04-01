@@ -1,15 +1,17 @@
 #![no_std]
 
-use soroban_sdk::{self, Address, Symbol, contracttype};
+use soroban_sdk::{Address, Symbol, contracttype};
 
-pub mod rwa_oracle;
-pub mod rwa_types;
-mod error;
-mod sep40;
+pub mod admin;
+pub mod common;
+pub mod contract;
+pub mod rwa;
+pub mod sep40;
 
-pub use error::Error;
-pub use rwa_types::*;
-pub use rwa_oracle::{RWAOracle, RWAOracleClient};
+// Re-exports
+pub use common::error::Error;
+pub use contract::{RWAOracle, RWAOracleClient};
+pub use rwa::types::{RWAAssetType, RWAMetadata, TokenizationInfo, ValuationMethod};
 
 /// Quoted asset definition (SEP-40 compatible)
 #[contracttype]
@@ -29,5 +31,25 @@ pub struct PriceData {
     pub timestamp: u64, // recording timestamp
 }
 
+#[cfg(test)]
 mod test;
 
+/// Minimal test contract with no constructor - used to test StorageNotInitialized.
+/// Uses same storage layout as RWAOracle so RWAOracleStorage::get() can be exercised.
+#[cfg(test)]
+pub mod test_contract {
+    use soroban_sdk::{contract, contractimpl, Env, Vec};
+
+    use crate::common::storage::RWAOracleStorage;
+    use crate::Asset;
+
+    #[contract]
+    pub struct RWAOracleStorageTest;
+
+    #[contractimpl]
+    impl RWAOracleStorageTest {
+        pub fn get_assets(env: &Env) -> Vec<Asset> {
+            RWAOracleStorage::get(env).assets.clone()
+        }
+    }
+}

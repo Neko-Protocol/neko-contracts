@@ -1,13 +1,15 @@
-use soroban_sdk::{contract, contractimpl, Address, Env, Symbol};
+use soroban_sdk::{Address, Env, Symbol, contract, contractimpl};
 
 use crate::admin::Admin;
 use crate::common::error::Error;
 use crate::common::storage::Storage;
-use crate::common::types::{InterestRateParams, PoolState};
+use crate::common::types::{AssetType, BackstopDeposit, InterestRateParams, PoolState};
 use crate::operations::backstop::Backstop;
+use crate::operations::bad_debt::BadDebt;
 use crate::operations::borrowing::Borrowing;
 use crate::operations::collateral::Collateral;
 use crate::operations::interest::Interest;
+use crate::operations::interest_auction::InterestAuction;
 use crate::operations::lending::Lending;
 use crate::operations::liquidations::Liquidations;
 
@@ -21,34 +23,46 @@ impl LendingContract {
     pub fn initialize(
         env: Env,
         admin: Address,
+        treasury: Address,
         rwa_oracle: Address,
         reflector_oracle: Address,
         backstop_threshold: i128,
         backstop_take_rate: u32,
+        reserve_factor: u32,
+        origination_fee_rate: u32,
+        liquidation_fee_rate: u32,
     ) {
         Admin::initialize(
             &env,
             &admin,
+            &treasury,
             &rwa_oracle,
             &reflector_oracle,
             backstop_threshold,
             backstop_take_rate,
+            reserve_factor,
+            origination_fee_rate,
+            liquidation_fee_rate,
         );
     }
 
     // ========== Admin Functions ==========
 
-    /// Set collateral factor for an RWA token
-    pub fn set_collateral_factor(env: Env, rwa_token: Address, factor: u32) {
-        Admin::set_collateral_factor(&env, &rwa_token, factor);
+    /// Set collateral factor for a token
+    /// asset_type: Rwa for RWA tokens (uses RWA oracle), Crypto for stable/crypto tokens (uses Reflector oracle)
+    /// symbol: the asset symbol used for oracle queries (e.g. symbol_short!("USDC"))
+    pub fn set_collateral_factor(
+        env: Env,
+        token: Address,
+        factor: u32,
+        asset_type: AssetType,
+        symbol: Symbol,
+    ) {
+        Admin::set_collateral_factor(&env, &token, factor, asset_type, symbol);
     }
 
     /// Set interest rate parameters for an asset
-    pub fn set_interest_rate_params(
-        env: Env,
-        asset: Symbol,
-        params: InterestRateParams,
-    ) {
+    pub fn set_interest_rate_params(env: Env, asset: Symbol, params: InterestRateParams) {
         Admin::set_interest_rate_params(&env, &asset, &params);
     }
 
@@ -68,13 +82,54 @@ impl LendingContract {
     }
 
     /// Set token contract address for an asset symbol
-    pub fn set_token_contract(env: Env, asset: Symbol, token_address: Address) {
-        Admin::set_token_contract(&env, &asset, &token_address);
+    /// asset_type: Rwa for RWA tokens (uses RWA oracle), Crypto for stable/crypto tokens (uses Reflector oracle)
+    pub fn set_token_contract(
+        env: Env,
+        asset: Symbol,
+        token_address: Address,
+        asset_type: AssetType,
+    ) {
+        Admin::set_token_contract(&env, &asset, &token_address, asset_type);
     }
 
     /// Set backstop token contract address
     pub fn set_backstop_token(env: Env, token_address: Address) {
         Admin::set_backstop_token(&env, &token_address);
+    }
+
+    /// Set treasury address. Admin-only.
+    pub fn set_treasury(env: Env, treasury: Address) {
+        Admin::set_treasury(&env, &treasury);
+    }
+
+    /// Get treasury address
+    pub fn get_treasury(env: Env) -> Address {
+        Admin::get_treasury(&env)
+    }
+
+    /// Set reserve factor (7 decimals, e.g. 1_000_000 = 10%). Admin-only.
+    pub fn set_reserve_factor(env: Env, reserve_factor: u32) {
+        Admin::set_reserve_factor(&env, reserve_factor);
+    }
+
+    /// Set origination fee rate (7 decimals, e.g. 40_000 = 0.4%). Admin-only.
+    pub fn set_origination_fee_rate(env: Env, origination_fee_rate: u32) {
+        Admin::set_origination_fee_rate(&env, origination_fee_rate);
+    }
+
+    /// Set liquidation fee rate (7 decimals, e.g. 100_000 = 1%). Admin-only.
+    pub fn set_liquidation_fee_rate(env: Env, liquidation_fee_rate: u32) {
+        Admin::set_liquidation_fee_rate(&env, liquidation_fee_rate);
+    }
+
+    /// Collect accumulated treasury fees for an asset and transfer to treasury address. Admin-only.
+    pub fn collect_treasury_fees(env: Env, asset: Symbol) -> Result<i128, Error> {
+        Admin::collect_treasury_fees(&env, &asset)
+    }
+
+    /// Get accumulated treasury fees (not yet collected) for an asset.
+    pub fn get_treasury_credit(env: Env, asset: Symbol) -> i128 {
+        Admin::get_treasury_credit(&env, &asset)
     }
 
     /// Upgrade the contract to a new WASM hash
@@ -91,7 +146,12 @@ impl LendingContract {
     }
 
     /// Withdraw crypto asset from the pool
-    pub fn withdraw(env: Env, lender: Address, asset: Symbol, b_tokens: i128) -> Result<i128, Error> {
+    pub fn withdraw(
+        env: Env,
+        lender: Address,
+        asset: Symbol,
+        b_tokens: i128,
+    ) -> Result<i128, Error> {
         Lending::withdraw(&env, &lender, &asset, b_tokens)
     }
 
@@ -118,7 +178,12 @@ impl LendingContract {
     }
 
     /// Repay debt
-    pub fn repay(env: Env, borrower: Address, asset: Symbol, d_tokens: i128) -> Result<i128, Error> {
+    pub fn repay(
+        env: Env,
+        borrower: Address,
+        asset: Symbol,
+        d_tokens: i128,
+    ) -> Result<i128, Error> {
         Borrowing::repay(&env, &borrower, &asset, d_tokens)
     }
 
@@ -185,17 +250,19 @@ impl LendingContract {
         rwa_token: Address,
         debt_asset: Symbol,
         liquidation_percent: u32,
-    ) -> Result<Address, Error> {
-        Liquidations::initiate_liquidation(&env, &borrower, &rwa_token, &debt_asset, liquidation_percent)
+    ) -> Result<u32, Error> {
+        Liquidations::initiate_liquidation(
+            &env,
+            &borrower,
+            &rwa_token,
+            &debt_asset,
+            liquidation_percent,
+        )
     }
 
     /// Fill a liquidation auction
-    pub fn fill_auction(
-        env: Env,
-        auction_id: Address,
-        liquidator: Address,
-    ) -> Result<(), Error> {
-        Liquidations::fill_auction(&env, &auction_id, &liquidator)
+    pub fn fill_auction(env: Env, auction_id: u32, liquidator: Address) -> Result<(), Error> {
+        Liquidations::fill_auction(&env, auction_id, &liquidator)
     }
 
     // ========== Backstop Functions ==========
@@ -205,9 +272,79 @@ impl LendingContract {
         Backstop::deposit(&env, &depositor, amount)
     }
 
-    /// Withdraw from backstop
+    /// Initiate withdrawal from backstop — enters the 17-day queue
+    pub fn initiate_withdrawal(env: Env, depositor: Address, amount: i128) -> Result<(), Error> {
+        Backstop::initiate_withdrawal(&env, &depositor, amount)
+    }
+
+    /// Withdraw from backstop (requires queue period to have elapsed)
     pub fn withdraw_from_backstop(env: Env, depositor: Address, amount: i128) -> Result<(), Error> {
         Backstop::withdraw(&env, &depositor, amount)
+    }
+
+    /// Get backstop token contract address
+    pub fn get_backstop_token(env: Env) -> Option<Address> {
+        let storage = Storage::get(&env);
+        storage.backstop_token
+    }
+
+    /// Get backstop deposit info for a depositor
+    pub fn get_backstop_deposit(env: Env, depositor: Address) -> BackstopDeposit {
+        Backstop::get_deposit(&env, &depositor)
+    }
+
+    // ========== Bad Debt Auction Functions ==========
+
+    /// Create a bad debt auction for uncovered debt
+    pub fn create_bad_debt_auction(
+        env: Env,
+        borrower: Address,
+        debt_asset: Symbol,
+    ) -> Result<u32, Error> {
+        BadDebt::create_bad_debt_auction(&env, &borrower, &debt_asset)
+    }
+
+    /// Fill a bad debt auction
+    pub fn fill_bad_debt_auction(
+        env: Env,
+        auction_id: u32,
+        bidder: Address,
+        amount: i128,
+    ) -> Result<i128, Error> {
+        BadDebt::fill_bad_debt_auction(&env, auction_id, &bidder, amount)
+    }
+
+    /// Check if a borrower has bad debt
+    pub fn has_bad_debt(env: Env, borrower: Address) -> bool {
+        BadDebt::has_bad_debt(&env, &borrower)
+    }
+
+    // ========== Interest Auction Functions ==========
+
+    /// Create an interest auction for accumulated protocol interest
+    pub fn create_interest_auction(env: Env, asset: Symbol) -> Result<u32, Error> {
+        InterestAuction::create_interest_auction(&env, &asset)
+    }
+
+    /// Fill an interest auction
+    pub fn fill_interest_auction(
+        env: Env,
+        auction_id: u32,
+        bidder: Address,
+        asset: Symbol,
+        fill_percent: i128,
+    ) -> Result<(i128, i128), Error> {
+        InterestAuction::fill_interest_auction(&env, auction_id, &bidder, &asset, fill_percent)
+    }
+
+    /// Get accumulated interest for an asset
+    pub fn get_accumulated_interest(env: Env, asset: Symbol) -> i128 {
+        InterestAuction::get_accumulated_interest(&env, &asset)
+    }
+
+    /// Check if an interest auction can be created
+    pub fn can_create_interest_auction(env: Env, asset: Symbol) -> bool {
+        InterestAuction::can_create_auction(&env, &asset)
     }
 
     // ========== View Functions ==========
@@ -226,5 +363,9 @@ impl LendingContract {
     pub fn get_collateral_factor(env: Env, rwa_token: Address) -> u32 {
         Admin::get_collateral_factor(&env, &rwa_token)
     }
-}
 
+    /// Calculate health factor for a borrower (7 decimals)
+    pub fn calculate_health_factor(env: Env, borrower: Address) -> Result<u32, Error> {
+        Liquidations::calculate_health_factor(&env, &borrower)
+    }
+}

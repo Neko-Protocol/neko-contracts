@@ -1,0 +1,57 @@
+use soroban_sdk::{contract, contractimpl, vec, Address, BytesN, Env, IntoVal, Symbol, Vec};
+
+use crate::storage::Storage;
+use crate::types::MintRequest;
+
+#[contract]
+pub struct Faucet;
+
+#[contractimpl]
+impl Faucet {
+    /// Initialize the faucet with an admin address.
+    /// The admin must be the same account that controls the rwa-token contracts.
+    pub fn initialize(env: Env, admin: Address) {
+        assert!(!Storage::is_initialized(&env), "Faucet: already initialized");
+        admin.require_auth();
+        Storage::set_admin(&env, &admin);
+        Storage::set_initialized(&env);
+    }
+
+    /// Mint multiple tokens in a single invocation.
+    /// The recipient (to) must authorize in the root context so sub-calls to token.mint pass auth.
+    pub fn bulk_mint(env: Env, requests: Vec<MintRequest>) {
+        for req in requests.iter() {
+            req.to.require_auth();
+            env.invoke_contract::<()>(
+                &req.token,
+                &Symbol::new(&env, "mint"),
+                vec![&env, req.to.into_val(&env), req.amount.into_val(&env)],
+            );
+        }
+    }
+
+    /// Return the admin address.
+    pub fn admin(env: Env) -> Address {
+        Storage::get_admin(&env)
+    }
+
+    /// Upgrade the contract to new WASM. Admin-only.
+    pub fn upgrade(env: Env, new_wasm_hash: BytesN<32>) {
+        Storage::get_admin(&env).require_auth();
+        env.deployer().update_current_contract_wasm(new_wasm_hash);
+    }
+
+    /// Transfer admin of each token to a new address.
+    /// Only the current admin (faucet) can invoke set_admin on tokens. This function
+    /// invokes set_admin on each token so the faucet can hand off admin to another address.
+    pub fn transfer_token_admins(env: Env, tokens: Vec<Address>, new_admin: Address) {
+        Storage::get_admin(&env).require_auth();
+        for token in tokens.iter() {
+            env.invoke_contract::<()>(
+                &token,
+                &Symbol::new(&env, "set_admin"),
+                vec![&env, new_admin.into_val(&env)],
+            );
+        }
+    }
+}

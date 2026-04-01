@@ -53,6 +53,7 @@ pub enum Error {
     InvalidLiquidationAmount = 64,
     HealthFactorTooHigh = 65,
     HealthFactorTooLow = 66,
+    InvalidFillPercent = 67,
 
     // Backstop errors
     InsufficientBackstopDeposit = 70,
@@ -69,5 +70,8 @@ pub enum Error {
 
     // Token contract errors
     TokenContractNotSet = 84,
-}
 
+    // Treasury errors
+    TreasuryNotSet = 85,
+    NoTreasuryFeesToCollect = 86,
+}

@@ -1,0 +1,77 @@
+name: EVM Contracts
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "evm-contracts/**"
+      - ".github/workflows/evm-contracts.yml"
+  pull_request:
+    paths:
+      - "evm-contracts/**"
+      - ".github/workflows/evm-contracts.yml"
+
+env:
+  FOUNDRY_PROFILE: ci
+
+jobs:
+  build:
+    name: Build & Test
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: evm-contracts/rwa-lending
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: nightly
+
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: evm-contracts/rwa-lending/package-lock.json
+
+      - name: Install npm dependencies
+        run: npm ci
+
+      - name: Check Forge version
+        run: forge --version
+
+      - name: Build contracts
+        run: forge build --sizes
+
+      - name: Run tests
+        run: forge test -vvv
+
+      - name: Run gas report
+        run: forge test --gas-report
+
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: evm-contracts/rwa-lending
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: nightly
+
+      - name: Check formatting
+        run: forge fmt --check
