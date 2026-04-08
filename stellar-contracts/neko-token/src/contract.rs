@@ -200,12 +200,10 @@ impl TokenInterface for RWATokenContract {
     }
 
     fn transfer(env: Env, from: Address, to: MuxedAddress, amount: i128) {
-        Compliance::check_transfer(&env, &from, &to.address(), amount);
         TokenInterfaceImpl::transfer(&env, &from, &to.address(), amount);
     }
 
     fn transfer_from(env: Env, spender: Address, from: Address, to: Address, amount: i128) {
-        Compliance::check_transfer(&env, &from, &to, amount);
         TokenInterfaceImpl::transfer_from(&env, &spender, &from, &to, amount);
     }
 
