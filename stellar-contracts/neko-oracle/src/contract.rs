@@ -299,11 +299,6 @@ impl RWAOracle {
             .persistent()
             .set(&DataKey::Prices(asset_id.clone()), &asset);
 
-        // Update last timestamp
-        let mut state = RWAOracleStorage::get(env);
-        state.last_timestamp = timestamp;
-        RWAOracleStorage::set(env, &state);
-
         Admin::extend_instance_ttl(env);
         Self::extend_persistent_ttl(env, &DataKey::Prices(asset_id));
     }

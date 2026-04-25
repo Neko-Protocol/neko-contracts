@@ -14,7 +14,6 @@ pub struct RWAOracleStorage {
     pub base: Asset,
     pub decimals: u32,
     pub resolution: u32,
-    pub last_timestamp: u64,
     // RWA metadata
     pub rwa_metadata: Map<Symbol, RWAMetadata>,
     // Asset type mapping
@@ -30,7 +29,6 @@ impl RWAOracleStorage {
             base,
             decimals,
             resolution,
-            last_timestamp: 0,
             rwa_metadata: Map::new(env),
             asset_types: Map::new(env),
             max_staleness: DEFAULT_MAX_STALENESS,

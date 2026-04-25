@@ -1466,3 +1466,40 @@ fn test_propose_again_replaces_pending() {
     oracle.propose_admin(&admin_b);
     assert_eq!(oracle.get_pending_admin().unwrap(), admin_b);
 }
+
+// ==================== last_timestamp Removal Tests ====================
+
+#[test]
+fn test_lastprice_correct_after_multiple_updates() {
+    let e = Env::default();
+    e.mock_all_auths();
+    set_ledger_timestamp(&e, 2_000_000_000);
+
+    let oracle = create_neko_oracle_contract(&e);
+    let asset = Asset::Other(Symbol::new(&e, "NVDA"));
+
+    oracle.set_asset_price(&asset, &100, &2_000_000_001);
+    oracle.set_asset_price(&asset, &200, &2_000_000_002);
+    oracle.set_asset_price(&asset, &300, &2_000_000_003);
+
+    let latest = oracle.lastprice(&asset).unwrap();
+    assert_eq!(latest.price, 300);
+    assert_eq!(latest.timestamp, 2_000_000_003);
+}
+
+#[test]
+fn test_lastprice_independent_per_asset() {
+    let e = Env::default();
+    e.mock_all_auths();
+    set_ledger_timestamp(&e, 2_000_000_000);
+
+    let oracle = create_neko_oracle_contract(&e);
+    let nvda = Asset::Other(Symbol::new(&e, "NVDA"));
+    let tsla = Asset::Other(Symbol::new(&e, "TSLA"));
+
+    oracle.set_asset_price(&nvda, &500, &2_000_000_001);
+    oracle.set_asset_price(&tsla, &999, &2_000_000_002);
+
+    assert_eq!(oracle.lastprice(&nvda).unwrap().price, 500);
+    assert_eq!(oracle.lastprice(&tsla).unwrap().price, 999);
+}
