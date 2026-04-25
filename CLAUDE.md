@@ -37,8 +37,12 @@ cargo build --target wasm32v1-none --release          # WASM target
 
 # Test
 cargo test --workspace
-cargo test --package rwa-lending                      # Single package
-cargo test --package adapter-rwa-lending              # Adapter tests
+cargo test --package neko-pool                        # Single package
+cargo test --package adapter-neko                     # Adapter tests
+
+# Fuzz (separate workspace; nightly recommended)
+cd test-suites/fuzz && cargo build --release        # Compile harnesses
+# cargo install cargo-fuzz && cargo fuzz run fuzz_pool_general
 ```
 
 ### Quick Setup (EVM)
@@ -89,7 +93,7 @@ All adapters implement the IAdapter protocol to plug into rwa-vault:
 ## Key Conventions
 
 - EVM uses Solidity 0.8.27 with optimizer (200 runs), Cancun EVM version
-- Stellar uses Soroban SDK 23.0.4, Rust Edition 2024
+- Stellar uses Soroban SDK 25.3.0, Rust Edition 2024
 - Tests mirror source structure in `test/` directories
 - OpenZeppelin contracts for ERC20, AccessControl, ReentrancyGuard
 - Adapters are `cdylib` crates; some also expose `rlib` for testing utilities

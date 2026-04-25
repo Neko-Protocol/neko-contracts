@@ -1,0 +1,24 @@
+[package]
+name = "neko-token"
+description = "Neko Token - Regulated RWA token with oracle price integration (SEP-41 + SEP-57)"
+version = "0.0.1"
+authors = ["OppiaLabs <contact@oppiasotfwarelabs.com>"]
+license.workspace = true
+edition.workspace = true
+repository.workspace = true
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+doctest = false
+
+[dependencies]
+soroban-sdk = { workspace = true }
+neko-oracle = { path = "../neko-oracle" }
+
+[dev-dependencies]
+soroban-sdk = { workspace = true, features = ["testutils"] }
+
+[package.metadata.stellar]
+contract = true
+cargo_inherit = true

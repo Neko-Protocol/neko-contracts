@@ -1,0 +1,26 @@
+[package]
+name = "neko-backstop"
+description = "Neko Backstop - First-loss capital reserve for the Neko lending protocol"
+version = "0.0.1"
+authors.workspace = true
+license.workspace = true
+edition.workspace = true
+repository.workspace = true
+publish = false
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+doctest = false
+
+[features]
+testutils = ["soroban-sdk/testutils"]
+
+[dependencies]
+soroban-sdk = { workspace = true }
+
+[dev-dependencies]
+soroban-sdk = { workspace = true, features = ["testutils"] }
+
+[package.metadata.stellar]
+contract = true
+cargo_inherit = true

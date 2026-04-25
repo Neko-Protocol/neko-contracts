@@ -18,7 +18,7 @@ pub const REQUEST_WITHDRAW: u32 = 1;
 #[contracttype]
 #[derive(Clone, Debug)]
 pub struct AdapterStorage {
-    /// rwa-vault contract — only caller allowed for a_deposit / a_withdraw
+    /// neko-vault contract — only caller allowed for a_deposit / a_withdraw
     pub vault: Address,
     /// Blend pool contract address
     pub blend_pool: Address,

@@ -5,7 +5,7 @@ use crate::common::events::Events;
 use crate::common::storage::Storage;
 use crate::soroswap_pool;
 
-/// Adapter connecting rwa-vault to a Soroswap AMM pair.
+/// Adapter connecting neko-vault to a Soroswap AMM pair.
 ///
 /// Deposit flow (token_a single-sided entry):
 ///   vault → token_a.transfer(vault, adapter, amount)  [vault self-auth]

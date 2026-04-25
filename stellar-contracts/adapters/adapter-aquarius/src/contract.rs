@@ -6,7 +6,7 @@ use crate::common::error::Error;
 use crate::common::events::Events;
 use crate::common::storage::Storage;
 
-/// Adapter connecting rwa-vault to an Aquarius AMM pool.
+/// Adapter connecting neko-vault to an Aquarius AMM pool.
 ///
 /// Deposit flow (deposit_token single-sided entry):
 ///   vault → deposit_token.transfer(vault, adapter, amount)  [vault self-auth]

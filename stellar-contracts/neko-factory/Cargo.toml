@@ -1,0 +1,27 @@
+[package]
+name = "neko-factory"
+description = "Neko Factory — deploy audited neko-pool instances and track legitimate pools"
+version.workspace = true
+authors.workspace = true
+license.workspace = true
+edition.workspace = true
+repository.workspace = true
+publish = false
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+doctest = false
+
+[features]
+testutils = ["soroban-sdk/testutils"]
+
+[dependencies]
+soroban-sdk = { workspace = true }
+
+[dev-dependencies]
+soroban-sdk = { workspace = true, features = ["testutils"] }
+neko-pool = { path = "../neko-pool", features = ["testutils"] }
+
+[package.metadata.stellar]
+contract = true
+cargo_inherit = true
